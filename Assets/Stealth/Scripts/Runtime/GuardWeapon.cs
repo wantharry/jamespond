@@ -65,8 +65,14 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Optional sound played on every shot.")]
         [SerializeField] private SoundDef fireSound;
 
-        [Tooltip("How long the tracer line stays visible, in seconds.")]
-        [SerializeField, Min(0.01f)] private float tracerDuration = 0.05f;
+        [Tooltip("How long the tracer line stays visible, in seconds. Below about 0.1 it is easy to miss entirely at 60fps.")]
+        [SerializeField, Min(0.01f)] private float tracerDuration = 0.15f;
+
+        [Tooltip("Colour of the tracer line.")]
+        [SerializeField] private Color tracerColor = new Color(1f, 0.85f, 0.25f);
+
+        [Tooltip("Thickness of the tracer at the muzzle, in metres.")]
+        [SerializeField, Min(0.005f)] private float tracerWidth = 0.06f;
 
         private float m_AimTimer;
         private float m_ShotCooldown;
@@ -211,16 +217,31 @@ namespace Blocks.Gameplay.Stealth
             line.positionCount = 2;
             line.SetPosition(0, origin);
             line.SetPosition(1, endPoint);
-            line.startWidth = 0.04f;
-            line.endWidth = 0.01f;
+            line.startWidth = tracerWidth;
+            line.endWidth = tracerWidth * 0.4f;
             line.useWorldSpace = true;
+            line.alignment = LineAlignment.View;
+            line.numCapVertices = 2;
 
-            Shader shader = Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Color");
+            // Tracers are self-lit streaks; lighting and shadows on them look wrong and cost time.
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            line.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+
+            // Sprites/Default honours the LineRenderer's vertex colours in both URP and built-in,
+            // which URP's own Unlit shader does not without setting _BaseColor directly.
+            Shader shader = Shader.Find("Sprites/Default")
+                            ?? Shader.Find("Universal Render Pipeline/Unlit")
+                            ?? Shader.Find("Unlit/Color");
             if (shader != null)
             {
-                Material material = new Material(shader) { color = new Color(1f, 0.85f, 0.3f) };
-                line.material = material;
+                line.material = new Material(shader);
             }
+
+            // Set the colours on the renderer, not just the material. A material tint alone leaves
+            // the line white under Sprites/Default.
+            line.startColor = tracerColor;
+            line.endColor = new Color(tracerColor.r, tracerColor.g, tracerColor.b, 0.35f);
 
             Destroy(tracer, tracerDuration);
         }

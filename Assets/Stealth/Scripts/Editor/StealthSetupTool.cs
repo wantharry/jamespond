@@ -102,6 +102,74 @@ namespace Blocks.Gameplay.Stealth.Editor
         }
 
         /// <summary>
+        /// Adds any stealth components that guards already in the scene are missing, and refreshes
+        /// their layer masks.
+        /// </summary>
+        /// <remarks>
+        /// Adding a component to the codebase does not retroactively attach it to GameObjects that
+        /// already exist in a scene. Guards built before a component was written keep working but
+        /// silently lack the new behaviour, so this repairs them in place rather than forcing a
+        /// delete-and-recreate that would lose hand-placed positions and routes.
+        /// </remarks>
+        [MenuItem("Tools/Stealth/Upgrade Existing Guards", false, 2)]
+        public static void UpgradeExistingGuards()
+        {
+            GuardBrain[] brains = Object.FindObjectsByType<GuardBrain>(FindObjectsInactive.Include);
+            if (brains.Length == 0)
+            {
+                EditorUtility.DisplayDialog(
+                    "Stealth Setup",
+                    "No guards found in the open scene.\n\nUse 'Set Up Guards In Current Scene' first.",
+                    "OK");
+                return;
+            }
+
+            int upgraded = 0;
+
+            foreach (GuardBrain brain in brains)
+            {
+                GameObject go = brain.gameObject;
+                bool changed = false;
+
+                GuardVision vision = go.GetComponent<GuardVision>();
+                if (vision == null)
+                {
+                    vision = Undo.AddComponent<GuardVision>(go);
+                    changed = true;
+                }
+                ConfigureVisionMasks(vision);
+
+                if (go.GetComponent<GuardPatrol>() == null)
+                {
+                    Undo.AddComponent<GuardPatrol>(go);
+                    changed = true;
+                }
+
+                GuardWeapon weapon = go.GetComponent<GuardWeapon>();
+                if (weapon == null)
+                {
+                    weapon = Undo.AddComponent<GuardWeapon>(go);
+                    changed = true;
+                }
+                ConfigureWeaponMask(weapon);
+
+                if (changed)
+                {
+                    upgraded++;
+                }
+            }
+
+            EditorSceneManager.MarkAllScenesDirty();
+
+            EditorUtility.DisplayDialog(
+                "Stealth Setup",
+                $"Checked {brains.Length} guard(s); added missing components to {upgraded}.\n\n" +
+                "Layer masks were refreshed on all of them.\n\n" +
+                "Save the scene (Ctrl+S) to keep this.",
+                "OK");
+        }
+
+        /// <summary>
         /// Removes everything this tool created, for a clean retry.
         /// </summary>
         [MenuItem("Tools/Stealth/Remove Generated Guards", false, 20)]
