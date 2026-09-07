@@ -57,6 +57,15 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Cone of inaccuracy in degrees. 0 makes every shot a guaranteed hit.")]
         [SerializeField, Range(0f, 20f)] private float spreadDegrees = 4f;
 
+        [Tooltip("Chance to miss a target that is holding still, from 0 to 1. Rewards stopping and taking cover rather than running under fire.")]
+        [SerializeField, Range(0f, 1f)] private float missChanceWhenTargetStill = 0.25f;
+
+        [Tooltip("Target speed in metres per second below which it counts as standing still.")]
+        [SerializeField, Min(0f)] private float stillSpeedThreshold = 0.15f;
+
+        [Tooltip("How far off-target a deliberate miss is thrown, in degrees. Large enough to visibly go wide.")]
+        [SerializeField, Range(1f, 45f)] private float missDeflectionDegrees = 9f;
+
         [Tooltip("Height the shot originates from, roughly the guard's shoulder.")]
         [SerializeField, Min(0f)] private float muzzleHeight = 1.5f;
 
@@ -85,6 +94,16 @@ namespace Blocks.Gameplay.Stealth
         private bool m_HasAcquiredTarget;
         private bool m_HasLoggedFirstShot;
         private GuardBrain m_Brain;
+
+        private Vector3 m_PreviousTargetPosition;
+        private bool m_HasPreviousTargetPosition;
+        private float m_SmoothedTargetSpeed;
+
+        /// <summary>
+        /// Whether the current target is considered stationary. Exposed so a HUD could show the
+        /// player that holding still is buying them something.
+        /// </summary>
+        public bool TargetIsStill => m_SmoothedTargetSpeed < stillSpeedThreshold;
 
         /// <summary>
         /// How far this guard is willing to shoot from. <see cref="GuardBrain"/> reads this to decide
@@ -122,6 +141,10 @@ namespace Blocks.Gameplay.Stealth
                 return false;
             }
 
+            // Sampled every frame while engaging, not just on the frames a shot goes off, so the
+            // speed estimate is current at the moment of firing.
+            TrackTargetMotion(target);
+
             // Wind-up. Resets whenever the guard loses and re-acquires a target, so repeatedly
             // breaking line of sight keeps buying the player time.
             if (!m_HasAcquiredTarget)
@@ -155,6 +178,11 @@ namespace Blocks.Gameplay.Stealth
         {
             m_HasAcquiredTarget = false;
             m_AimTimer = aimTime;
+
+            // Drop the motion history too. A stale position from the previous engagement would
+            // otherwise read as a huge jump and mask a genuinely stationary player.
+            m_HasPreviousTargetPosition = false;
+            m_SmoothedTargetSpeed = 0f;
         }
 
         #endregion
@@ -168,7 +196,16 @@ namespace Blocks.Gameplay.Stealth
         {
             Vector3 origin = transform.position + Vector3.up * muzzleHeight;
             Vector3 aimPoint = target.position + Vector3.up * targetCentreOffset;
+
+            // Roll the deliberate miss before aiming, so the shot can be thrown wide rather than
+            // appearing to strike the target and doing nothing.
+            bool deliberateMiss = TargetIsStill && Random.value < missChanceWhenTargetStill;
+
             Vector3 direction = ApplySpread((aimPoint - origin).normalized);
+            if (deliberateMiss)
+            {
+                direction = ApplyMissDeflection(direction);
+            }
 
             Vector3 endPoint = origin + direction * range;
 
@@ -178,7 +215,9 @@ namespace Blocks.Gameplay.Stealth
 
                 // Damage only lands on things that know how to receive it. Level geometry simply
                 // stops the bullet.
-                IHittable hittable = hit.collider.GetComponentInParent<IHittable>();
+                // Deflection alone does not guarantee a clean miss at close range, so suppress the
+                // damage outright. That keeps the miss chance exactly what it says on the field.
+                IHittable hittable = deliberateMiss ? null : hit.collider.GetComponentInParent<IHittable>();
                 if (hittable != null)
                 {
                     hittable.OnHit(new HitInfo
@@ -199,6 +238,8 @@ namespace Blocks.Gameplay.Stealth
                     Debug.Log(
                         $"[GuardWeapon] '{name}' fired and hit '{hit.collider.name}' " +
                         $"(layer {LayerMask.LayerToName(hit.collider.gameObject.layer)}); " +
+                        $"target speed {m_SmoothedTargetSpeed:F2}m/s, " +
+                        $"{(deliberateMiss ? "DELIBERATE MISS (target was still)" : "aimed shot")}; " +
                         $"IHittable {(hittable != null ? "FOUND - damage applied" : "NOT found - no damage")}.",
                         this);
                 }
@@ -218,6 +259,54 @@ namespace Blocks.Gameplay.Stealth
             {
                 RenderShot(origin, endPoint);
             }
+        }
+
+        /// <summary>
+        /// Updates the smoothed estimate of how fast the target is moving.
+        /// </summary>
+        /// <remarks>
+        /// Frame-to-frame position deltas are noisy, so the estimate is exponentially smoothed with
+        /// a short time constant. Without that, a stationary player's jitter can momentarily read as
+        /// movement and cancel the miss chance at random.
+        /// </remarks>
+        private void TrackTargetMotion(Transform target)
+        {
+            if (!m_HasPreviousTargetPosition)
+            {
+                m_PreviousTargetPosition = target.position;
+                m_HasPreviousTargetPosition = true;
+                return;
+            }
+
+            float deltaTime = Time.deltaTime;
+            if (deltaTime <= Mathf.Epsilon)
+            {
+                return;
+            }
+
+            float instantaneousSpeed = Vector3.Distance(target.position, m_PreviousTargetPosition) / deltaTime;
+            m_PreviousTargetPosition = target.position;
+
+            // ~0.15s time constant: responsive enough to catch the player starting to run, slow
+            // enough to ignore single-frame noise.
+            float blend = 1f - Mathf.Exp(-deltaTime / 0.15f);
+            m_SmoothedTargetSpeed = Mathf.Lerp(m_SmoothedTargetSpeed, instantaneousSpeed, blend);
+        }
+
+        /// <summary>
+        /// Throws a shot well off-target so a deliberate miss is visibly wide rather than a tracer
+        /// that appears to connect for no damage.
+        /// </summary>
+        private Vector3 ApplyMissDeflection(Vector3 direction)
+        {
+            // Push out to the edge of the deflection cone rather than anywhere inside it, so the
+            // miss never lands close enough to look like a hit.
+            float angle = Random.Range(0f, 360f);
+            Quaternion offset = Quaternion.Euler(
+                Mathf.Sin(angle * Mathf.Deg2Rad) * missDeflectionDegrees,
+                Mathf.Cos(angle * Mathf.Deg2Rad) * missDeflectionDegrees,
+                0f);
+            return offset * direction;
         }
 
         /// <summary>
