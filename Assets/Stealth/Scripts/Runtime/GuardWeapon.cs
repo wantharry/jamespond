@@ -7,6 +7,11 @@ namespace Blocks.Gameplay.Stealth
     /// Lets a guard shoot at whatever <see cref="GuardBrain"/> has locked on to. Hitscan, with a
     /// wind-up before the first shot and spread on every shot, so being spotted is a threat rather
     /// than an instant death.
+    ///
+    /// Hit chance is driven by whether the target is moving: a stationary target is hit 75% of the
+    /// time, a moving one 50%, both configurable. Note that <see cref="spreadDegrees"/> applies on
+    /// top of these rolls, so the observed hit rate sits slightly below the configured figures. Set
+    /// spread to 0 if the percentages need to be exact.
     /// </summary>
     /// <remarks>
     /// Firing is server-only and routes damage through the same <see cref="IHittable"/> path the
@@ -57,8 +62,11 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Cone of inaccuracy in degrees. 0 makes every shot a guaranteed hit.")]
         [SerializeField, Range(0f, 20f)] private float spreadDegrees = 4f;
 
-        [Tooltip("Chance to miss a target that is holding still, from 0 to 1. Rewards stopping and taking cover rather than running under fire.")]
+        [Tooltip("Chance to miss a target that is holding still, from 0 to 1. Default 0.25, so a stationary target is hit 75% of the time.")]
         [SerializeField, Range(0f, 1f)] private float missChanceWhenTargetStill = 0.25f;
+
+        [Tooltip("Chance to miss a target that is moving, from 0 to 1. Default 0.5, so a moving target is hit 50% of the time.")]
+        [SerializeField, Range(0f, 1f)] private float missChanceWhenTargetMoving = 0.5f;
 
         [Tooltip("Target speed in metres per second below which it counts as standing still.")]
         [SerializeField, Min(0f)] private float stillSpeedThreshold = 0.15f;
@@ -197,9 +205,11 @@ namespace Blocks.Gameplay.Stealth
             Vector3 origin = transform.position + Vector3.up * muzzleHeight;
             Vector3 aimPoint = target.position + Vector3.up * targetCentreOffset;
 
-            // Roll the deliberate miss before aiming, so the shot can be thrown wide rather than
-            // appearing to strike the target and doing nothing.
-            bool deliberateMiss = TargetIsStill && Random.value < missChanceWhenTargetStill;
+            // Hit chance depends on whether the target is moving. Rolled before aiming so a miss can
+            // be thrown wide, rather than appearing to strike the target and doing nothing.
+            bool targetStill = TargetIsStill;
+            float missChance = targetStill ? missChanceWhenTargetStill : missChanceWhenTargetMoving;
+            bool deliberateMiss = Random.value < missChance;
 
             Vector3 direction = ApplySpread((aimPoint - origin).normalized);
             if (deliberateMiss)
@@ -238,8 +248,9 @@ namespace Blocks.Gameplay.Stealth
                     Debug.Log(
                         $"[GuardWeapon] '{name}' fired and hit '{hit.collider.name}' " +
                         $"(layer {LayerMask.LayerToName(hit.collider.gameObject.layer)}); " +
-                        $"target speed {m_SmoothedTargetSpeed:F2}m/s, " +
-                        $"{(deliberateMiss ? "DELIBERATE MISS (target was still)" : "aimed shot")}; " +
+                        $"target speed {m_SmoothedTargetSpeed:F2}m/s ({(targetStill ? "still" : "moving")}, " +
+                        $"{missChance:P0} miss chance), " +
+                        $"{(deliberateMiss ? "ROLLED A MISS" : "aimed shot")}; " +
                         $"IHittable {(hittable != null ? "FOUND - damage applied" : "NOT found - no damage")}.",
                         this);
                 }
