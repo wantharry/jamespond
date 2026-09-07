@@ -353,28 +353,27 @@ namespace Blocks.Gameplay.Stealth
 
                     if (targetVisible && m_Target != null)
                     {
-                        // An armed guard holds its ground at weapon range and shoots. An unarmed one
-                        // closes to melee distance, which is the old behaviour.
-                        float engageDistance = m_Weapon != null
-                            ? Mathf.Min(m_Weapon.Range, firingStandoff)
-                            : pursuitStoppingDistance;
-
-                        m_Agent.stoppingDistance = engageDistance;
-
                         float distanceToTarget = Vector3.Distance(transform.position, m_Target.position);
-                        bool inFiringPosition = m_Weapon != null && distanceToTarget <= engageDistance;
 
-                        // Stop moving before firing so shots are not sprayed while running.
-                        m_Agent.isStopped = inFiringPosition;
+                        // Movement and firing are independent decisions. A guard closes to its
+                        // preferred standoff, but it does not wait to get there before shooting -
+                        // if it can see you and you are in range, it fires.
+                        float holdDistance = m_Weapon != null ? firingStandoff : pursuitStoppingDistance;
+                        bool atHoldDistance = distanceToTarget <= holdDistance;
 
-                        if (!inFiringPosition)
+                        m_Agent.stoppingDistance = holdDistance;
+                        m_Agent.isStopped = atHoldDistance;
+
+                        if (!atHoldDistance)
                         {
                             m_Agent.SetDestination(m_Target.position);
                         }
 
                         FaceTowards(m_Target.position);
 
-                        if (inFiringPosition)
+                        // Line of sight is already established: targetVisible comes from
+                        // GuardVision, which has done the cone and occlusion checks this frame.
+                        if (m_Weapon != null && distanceToTarget <= m_Weapon.Range)
                         {
                             m_Weapon.TryFire(m_Target);
                         }
