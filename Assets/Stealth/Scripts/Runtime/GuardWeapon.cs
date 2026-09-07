@@ -77,6 +77,7 @@ namespace Blocks.Gameplay.Stealth
         private float m_AimTimer;
         private float m_ShotCooldown;
         private bool m_HasAcquiredTarget;
+        private bool m_HasLoggedFirstShot;
 
         /// <summary>
         /// How far this guard is willing to shoot from. <see cref="GuardBrain"/> reads this to decide
@@ -169,6 +170,23 @@ namespace Blocks.Gameplay.Stealth
                         impactForce = direction * 20f
                     });
                 }
+
+                // One line per guard, the first time it connects. Enough to tell "not firing" from
+                // "firing but you cannot see it" without spamming the console every shot.
+                if (!m_HasLoggedFirstShot)
+                {
+                    m_HasLoggedFirstShot = true;
+                    Debug.Log(
+                        $"[GuardWeapon] '{name}' fired and hit '{hit.collider.name}' " +
+                        $"(layer {LayerMask.LayerToName(hit.collider.gameObject.layer)}); " +
+                        $"IHittable {(hittable != null ? "FOUND - damage applied" : "NOT found - no damage")}.",
+                        this);
+                }
+            }
+            else if (!m_HasLoggedFirstShot)
+            {
+                m_HasLoggedFirstShot = true;
+                Debug.Log($"[GuardWeapon] '{name}' fired but the ray hit nothing within {range}m.", this);
             }
 
             ShowShotRpc(origin, endPoint);

@@ -50,6 +50,9 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Preferred distance an ARMED guard holds while shooting. Capped by the weapon's own range.")]
         [SerializeField, Min(1f)] private float firingStandoff = 9f;
 
+        [Tooltip("Add a GuardWeapon automatically if this guard has none. Turn off for a deliberately unarmed guard that only chases.")]
+        [SerializeField] private bool armIfMissing = true;
+
         [Header("Searching")]
         [Tooltip("Seconds spent looking around the last known position before giving up and returning to patrol.")]
         [SerializeField, Min(0f)] private float searchDuration = 6f;
@@ -115,6 +118,16 @@ namespace Blocks.Gameplay.Stealth
             m_Vision = GetComponent<GuardVision>();
             m_Patrol = GetComponent<GuardPatrol>();
             m_Weapon = GetComponent<GuardWeapon>();
+
+            // Guards placed in a scene before GuardWeapon existed have no weapon, and adding a
+            // component to the codebase does not attach it to objects already saved in a scene.
+            // Rather than leave those guards silently walking up to the player and doing nothing,
+            // arm them here. Its serialized defaults are playable, so this needs no configuration.
+            if (m_Weapon == null && armIfMissing)
+            {
+                m_Weapon = gameObject.AddComponent<GuardWeapon>();
+                Debug.Log($"[GuardBrain] '{name}' had no GuardWeapon; added one at runtime with default settings.", this);
+            }
         }
 
         public override void OnNetworkSpawn()
