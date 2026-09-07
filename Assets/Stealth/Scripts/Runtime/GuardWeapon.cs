@@ -1,5 +1,4 @@
 using Blocks.Gameplay.Core;
-using Unity.Netcode;
 using UnityEngine;
 
 namespace Blocks.Gameplay.Stealth
@@ -17,9 +16,16 @@ namespace Blocks.Gameplay.Stealth
     /// <c>ShooterHitProcessor</c> discards any hit whose attacker matches the victim's own
     /// <c>OwnerClientId</c>, and the host is client 0 — so a guard firing as "client 0" would have
     /// every shot silently ignored by the host player.
+    ///
+    /// This is deliberately a plain <see cref="MonoBehaviour"/> and not a NetworkBehaviour. Netcode
+    /// enumerates a NetworkObject's behaviours during initialisation and assigns each an id; one
+    /// added afterwards at runtime is never registered, so its <c>IsServer</c> stays false and every
+    /// guarded call silently no-ops. Keeping this off the network graph is what makes
+    /// <see cref="GuardBrain"/> safe to add it on demand. Replication of the visible shot goes
+    /// through <see cref="GuardBrain.ReportShot"/>, which is properly registered.
     /// </remarks>
     [DisallowMultipleComponent]
-    public class GuardWeapon : NetworkBehaviour
+    public class GuardWeapon : MonoBehaviour
     {
         #region Constants
 
@@ -78,6 +84,7 @@ namespace Blocks.Gameplay.Stealth
         private float m_ShotCooldown;
         private bool m_HasAcquiredTarget;
         private bool m_HasLoggedFirstShot;
+        private GuardBrain m_Brain;
 
         /// <summary>
         /// How far this guard is willing to shoot from. <see cref="GuardBrain"/> reads this to decide
@@ -87,17 +94,30 @@ namespace Blocks.Gameplay.Stealth
 
         #endregion
 
+        #region Unity Methods
+
+        private void Awake()
+        {
+            m_Brain = GetComponent<GuardBrain>();
+        }
+
+        #endregion
+
         #region Public Methods
 
         /// <summary>
         /// Attempts a shot at the given target. Safe to call every frame; internal timers decide
-        /// whether a shot actually leaves the barrel. Server only.
+        /// whether a shot actually leaves the barrel.
         /// </summary>
+        /// <remarks>
+        /// Server-authority is the caller's responsibility. <see cref="GuardBrain"/> only ticks on
+        /// the server, so this is never reached on a client.
+        /// </remarks>
         /// <param name="target">The transform to fire at.</param>
         /// <returns>True if a shot was fired this call.</returns>
         public bool TryFire(Transform target)
         {
-            if (!IsServer || target == null)
+            if (target == null)
             {
                 return false;
             }
@@ -189,7 +209,15 @@ namespace Blocks.Gameplay.Stealth
                 Debug.Log($"[GuardWeapon] '{name}' fired but the ray hit nothing within {range}m.", this);
             }
 
-            ShowShotRpc(origin, endPoint);
+            // Replication goes through the brain, which is a registered NetworkBehaviour.
+            if (m_Brain != null)
+            {
+                m_Brain.ReportShot(origin, endPoint);
+            }
+            else
+            {
+                RenderShot(origin, endPoint);
+            }
         }
 
         /// <summary>
@@ -208,11 +236,13 @@ namespace Blocks.Gameplay.Stealth
         }
 
         /// <summary>
-        /// Draws the shot on every peer. Without this the host would see tracers but connected
-        /// clients would see guards firing invisibly.
+        /// Draws and sounds one shot locally. Called on every peer by
+        /// <see cref="GuardBrain.ReportShot"/>, so connected clients see guards firing rather than
+        /// silently pointing.
         /// </summary>
-        [Rpc(SendTo.Everyone)]
-        private void ShowShotRpc(Vector3 origin, Vector3 endPoint)
+        /// <param name="origin">Muzzle position.</param>
+        /// <param name="endPoint">Where the shot terminated.</param>
+        public void RenderShot(Vector3 origin, Vector3 endPoint)
         {
             if (fireSound != null)
             {

@@ -177,9 +177,32 @@ namespace Blocks.Gameplay.Stealth
             UpdateBehaviour(targetVisible);
         }
 
+        /// <summary>
+        /// Replicates one shot's visuals to every peer. Called on the server by
+        /// <see cref="GuardWeapon"/>, which is a plain MonoBehaviour and so cannot send RPCs itself.
+        /// </summary>
+        /// <param name="origin">Muzzle position.</param>
+        /// <param name="endPoint">Where the shot terminated.</param>
+        public void ReportShot(Vector3 origin, Vector3 endPoint)
+        {
+            ShowShotRpc(origin, endPoint);
+        }
+
         #endregion
 
         #region Private Methods
+
+        /// <summary>
+        /// Draws the shot on every peer, including the server that fired it.
+        /// </summary>
+        [Rpc(SendTo.Everyone)]
+        private void ShowShotRpc(Vector3 origin, Vector3 endPoint)
+        {
+            if (m_Weapon != null)
+            {
+                m_Weapon.RenderShot(origin, endPoint);
+            }
+        }
 
         /// <summary>
         /// Scans for a target and moves the awareness meter toward or away from full.
