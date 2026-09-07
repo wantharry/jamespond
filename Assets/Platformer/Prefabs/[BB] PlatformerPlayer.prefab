@@ -26,6 +26,7 @@ GameObject:
   - component: {fileID: 6871827320169138264}
   - component: {fileID: 1390870495292615358}
   - component: {fileID: 6726926906507702785}
+  - component: {fileID: 3528422338507119439}
   m_Layer: 3
   m_Name: '[BB] PlatformerPlayer'
   m_TagString: Player
@@ -497,6 +498,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: Blocks.Gameplay.Core::Blocks.Gameplay.Core.NamePlateAddon
   nameDisplayCanvas: {fileID: 78353878671965719}
   nameDisplayText: {fileID: 167947500075464936}
+--- !u!114 &3528422338507119439
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4416926081852918481}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 260148f8c3d951f48b5658cb6cda4129, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Blocks.Gameplay.Stealth::Blocks.Gameplay.Stealth.PlayerCrouch
+  ShowTopMostFoldoutHeaderGroup: 1
+  crouchKey: 55
+  toggleMode: 0
+  crouchSpeed: 1.6
+  crouchHeight: 1
+  heightChangeSpeed: 6
+  crouchedVisibility: 0.4
+  headroomMask:
+    serializedVersion: 2
+    m_Bits: 1
 --- !u!1 &8338988566280778634
 GameObject:
   m_ObjectHideFlags: 0
