@@ -53,6 +53,22 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Add a GuardWeapon automatically if this guard has none. Turn off for a deliberately unarmed guard that only chases.")]
         [SerializeField] private bool armIfMissing = true;
 
+        [Header("Combat movement")]
+        [Tooltip("Keep moving while shooting instead of standing at the firing standoff. Off makes guards static turrets.")]
+        [SerializeField] private bool strafeWhileAttacking = true;
+
+        [Tooltip("Movement speed while circling a target under fire.")]
+        [SerializeField, Min(0f)] private float strafeSpeed = 2.6f;
+
+        [Tooltip("Seconds before the guard picks a new strafe position.")]
+        [SerializeField, Min(0.2f)] private float strafeInterval = 1.8f;
+
+        [Tooltip("How far around the target the guard moves each reposition, in degrees.")]
+        [SerializeField, Range(10f, 170f)] private float strafeArcDegrees = 55f;
+
+        [Tooltip("How far the guard may drift from its standoff before it closes or backs off instead of strafing.")]
+        [SerializeField, Min(0.5f)] private float standoffTolerance = 2.5f;
+
         [Header("Searching")]
         [Tooltip("Seconds spent looking around the last known position before giving up and returning to patrol.")]
         [SerializeField, Min(0f)] private float searchDuration = 6f;
@@ -76,6 +92,9 @@ namespace Blocks.Gameplay.Stealth
         private Vector3 m_LastKnownPosition;
         private float m_SearchTimer;
         private bool m_HasLastKnownPosition;
+
+        private float m_StrafeTimer;
+        private int m_StrafeDirection = 1;
 
         /// <summary>
         /// Replicated 0..1 detection meter. Server writes, everyone reads.
@@ -310,6 +329,14 @@ namespace Blocks.Gameplay.Stealth
                 return;
             }
 
+            // Only combat takes manual control of facing; every other state lets the agent turn to
+            // face its own path. Restored here so leaving combat cannot strand a guard unable to
+            // turn while patrolling.
+            if (m_State.Value != GuardAlertState.Alerted)
+            {
+                m_Agent.updateRotation = true;
+            }
+
             switch (m_State.Value)
             {
                 case GuardAlertState.Patrolling:
@@ -354,21 +381,15 @@ namespace Blocks.Gameplay.Stealth
                     if (targetVisible && m_Target != null)
                     {
                         float distanceToTarget = Vector3.Distance(transform.position, m_Target.position);
-
-                        // Movement and firing are independent decisions. A guard closes to its
-                        // preferred standoff, but it does not wait to get there before shooting -
-                        // if it can see you and you are in range, it fires.
                         float holdDistance = m_Weapon != null ? firingStandoff : pursuitStoppingDistance;
-                        bool atHoldDistance = distanceToTarget <= holdDistance;
 
-                        m_Agent.stoppingDistance = holdDistance;
-                        m_Agent.isStopped = atHoldDistance;
+                        // The agent must not steer the guard's facing during combat, or it would
+                        // turn to look where it is walking and fire sideways while strafing.
+                        m_Agent.updateRotation = false;
+                        m_Agent.isStopped = false;
+                        m_Agent.stoppingDistance = 0f;
 
-                        if (!atHoldDistance)
-                        {
-                            m_Agent.SetDestination(m_Target.position);
-                        }
-
+                        UpdateCombatMovement(distanceToTarget, holdDistance);
                         FaceTowards(m_Target.position);
 
                         // Line of sight is already established: targetVisible comes from
@@ -380,10 +401,92 @@ namespace Blocks.Gameplay.Stealth
                     }
                     else
                     {
+                        m_Agent.updateRotation = true;
                         m_Agent.isStopped = false;
                         m_Agent.stoppingDistance = pursuitStoppingDistance;
                     }
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Moves the guard while it is engaging: close the gap when too far, back off when too
+        /// close, and circle the target when comfortably at its standoff.
+        /// </summary>
+        /// <remarks>
+        /// Strafing exists so guards are not static turrets, and because hit chance depends on
+        /// whether a target is moving — a guard that stands still while shooting is asking to be
+        /// shot back at full accuracy once it can be damaged.
+        /// </remarks>
+        /// <param name="distanceToTarget">Current distance to the target.</param>
+        /// <param name="holdDistance">The standoff the guard wants to keep.</param>
+        private void UpdateCombatMovement(float distanceToTarget, float holdDistance)
+        {
+            if (m_Target == null)
+            {
+                return;
+            }
+
+            // Too far to shoot comfortably: close in at full speed.
+            if (distanceToTarget > holdDistance + standoffTolerance)
+            {
+                m_Agent.speed = chaseSpeed;
+                m_Agent.SetDestination(m_Target.position);
+                return;
+            }
+
+            // Crowded: give ground rather than walking into the player.
+            if (distanceToTarget < holdDistance - standoffTolerance)
+            {
+                m_Agent.speed = chaseSpeed;
+                Vector3 away = (transform.position - m_Target.position).normalized;
+                MoveToNavigable(m_Target.position + away * holdDistance);
+                return;
+            }
+
+            if (!strafeWhileAttacking)
+            {
+                m_Agent.isStopped = true;
+                return;
+            }
+
+            // In the comfortable band: circle. Reversing direction periodically keeps the movement
+            // from reading as a predictable orbit.
+            m_Agent.speed = strafeSpeed;
+            m_StrafeTimer -= Time.deltaTime;
+
+            bool arrived = !m_Agent.pathPending && m_Agent.remainingDistance <= 0.5f;
+            if (m_StrafeTimer <= 0f || arrived)
+            {
+                m_StrafeTimer = strafeInterval;
+
+                // Mostly continue the same way round, occasionally switch, so the player cannot
+                // simply lead the guard in one direction.
+                if (UnityEngine.Random.value < 0.35f)
+                {
+                    m_StrafeDirection = -m_StrafeDirection;
+                }
+
+                Vector3 bearing = (transform.position - m_Target.position).normalized;
+                Vector3 rotated = Quaternion.AngleAxis(strafeArcDegrees * m_StrafeDirection, Vector3.up) * bearing;
+                MoveToNavigable(m_Target.position + rotated * holdDistance);
+            }
+        }
+
+        /// <summary>
+        /// Sends the agent to the nearest navigable point to a desired position. Strafe targets are
+        /// computed geometrically and can land inside walls or off the mesh.
+        /// </summary>
+        private void MoveToNavigable(Vector3 desired)
+        {
+            if (NavMesh.SamplePosition(desired, out NavMeshHit hit, 4f, NavMesh.AllAreas))
+            {
+                m_Agent.SetDestination(hit.position);
+            }
+            else
+            {
+                // Nowhere sensible to circle to; hold and keep shooting rather than stalling.
+                m_StrafeDirection = -m_StrafeDirection;
             }
         }
 
