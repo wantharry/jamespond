@@ -44,8 +44,11 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Movement speed while chasing a spotted target.")]
         [SerializeField, Min(0f)] private float chaseSpeed = 4.2f;
 
-        [Tooltip("How close the guard tries to get to its target before holding position.")]
+        [Tooltip("How close an UNARMED guard gets to its target before holding position.")]
         [SerializeField, Min(0.5f)] private float pursuitStoppingDistance = 2f;
+
+        [Tooltip("Preferred distance an ARMED guard holds while shooting. Capped by the weapon's own range.")]
+        [SerializeField, Min(1f)] private float firingStandoff = 9f;
 
         [Header("Searching")]
         [Tooltip("Seconds spent looking around the last known position before giving up and returning to patrol.")]
@@ -64,6 +67,7 @@ namespace Blocks.Gameplay.Stealth
         private NavMeshAgent m_Agent;
         private GuardVision m_Vision;
         private GuardPatrol m_Patrol;
+        private GuardWeapon m_Weapon;
 
         private Transform m_Target;
         private Vector3 m_LastKnownPosition;
@@ -110,6 +114,7 @@ namespace Blocks.Gameplay.Stealth
             m_Agent = GetComponent<NavMeshAgent>();
             m_Vision = GetComponent<GuardVision>();
             m_Patrol = GetComponent<GuardPatrol>();
+            m_Weapon = GetComponent<GuardWeapon>();
         }
 
         public override void OnNetworkSpawn()
@@ -240,6 +245,13 @@ namespace Blocks.Gameplay.Stealth
 
             m_State.Value = next;
 
+            // Leaving combat clears the wind-up, so re-acquiring the player costs the guard its
+            // aim time again rather than letting it resume firing instantly.
+            if (previous == GuardAlertState.Alerted)
+            {
+                m_Weapon?.ResetAim();
+            }
+
             if (next == GuardAlertState.Alerted)
             {
                 onGuardAlerted?.Raise();
@@ -301,14 +313,40 @@ namespace Blocks.Gameplay.Stealth
                     break;
 
                 case GuardAlertState.Alerted:
-                    m_Agent.isStopped = false;
                     m_Agent.speed = chaseSpeed;
-                    m_Agent.stoppingDistance = pursuitStoppingDistance;
 
                     if (targetVisible && m_Target != null)
                     {
-                        m_Agent.SetDestination(m_Target.position);
+                        // An armed guard holds its ground at weapon range and shoots. An unarmed one
+                        // closes to melee distance, which is the old behaviour.
+                        float engageDistance = m_Weapon != null
+                            ? Mathf.Min(m_Weapon.Range, firingStandoff)
+                            : pursuitStoppingDistance;
+
+                        m_Agent.stoppingDistance = engageDistance;
+
+                        float distanceToTarget = Vector3.Distance(transform.position, m_Target.position);
+                        bool inFiringPosition = m_Weapon != null && distanceToTarget <= engageDistance;
+
+                        // Stop moving before firing so shots are not sprayed while running.
+                        m_Agent.isStopped = inFiringPosition;
+
+                        if (!inFiringPosition)
+                        {
+                            m_Agent.SetDestination(m_Target.position);
+                        }
+
                         FaceTowards(m_Target.position);
+
+                        if (inFiringPosition)
+                        {
+                            m_Weapon.TryFire(m_Target);
+                        }
+                    }
+                    else
+                    {
+                        m_Agent.isStopped = false;
+                        m_Agent.stoppingDistance = pursuitStoppingDistance;
                     }
                     break;
             }

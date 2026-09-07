@@ -212,9 +212,11 @@ namespace Blocks.Gameplay.Stealth.Editor
 
             GuardVision vision = guard.AddComponent<GuardVision>();
             GuardPatrol patrol = guard.AddComponent<GuardPatrol>();
+            GuardWeapon weapon = guard.AddComponent<GuardWeapon>();
             guard.AddComponent<GuardBrain>();
 
             ConfigureVisionMasks(vision);
+            ConfigureWeaponMask(weapon);
             CreatePatrolRoute(guard.transform, patrol, position, index);
             TintGuard(guard);
         }
@@ -264,6 +266,31 @@ namespace Blocks.Gameplay.Stealth.Editor
             SerializedObject so = new SerializedObject(vision);
             so.FindProperty("targetMask").intValue = targetMask;
             so.FindProperty("obstacleMask").intValue = obstacleMask;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// Sets what guard bullets collide with: the player, plus level geometry so shots are
+        /// stopped by walls instead of passing through cover.
+        /// </summary>
+        private static void ConfigureWeaponMask(GuardWeapon weapon)
+        {
+            int mask = 1 << LayerMask.NameToLayer("Default");
+
+            int playerLayer = LayerMask.NameToLayer("Player");
+            if (playerLayer >= 0)
+            {
+                mask |= 1 << playerLayer;
+            }
+
+            int hitBoxLayer = LayerMask.NameToLayer("PlayerHitBox");
+            if (hitBoxLayer >= 0)
+            {
+                mask |= 1 << hitBoxLayer;
+            }
+
+            SerializedObject so = new SerializedObject(weapon);
+            so.FindProperty("hitMask").intValue = mask;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
