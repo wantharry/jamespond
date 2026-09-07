@@ -1,0 +1,22 @@
+{
+    "name": "Blocks.Gameplay.Stealth.Editor",
+    "rootNamespace": "Blocks.Gameplay.Stealth.Editor",
+    "references": [
+        "Blocks.Gameplay.Stealth",
+        "Blocks.Gameplay.Core",
+        "Unity.Netcode.Runtime",
+        "Unity.AI.Navigation",
+        "Unity.AI.Navigation.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
