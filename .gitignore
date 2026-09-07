@@ -1,0 +1,50 @@
+# Unity generated — never commit these
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Meta files must be committed alongside their assets
+!/[Aa]ssets/**/*.meta
+
+# Generated IDE project files
+ExportedObj/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+sysinfo.txt
+
+# Build outputs
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+crashlytics-build.properties
+
+# IDE / editor
+/.idea/
+/.vs/
+/.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
