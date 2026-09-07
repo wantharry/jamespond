@@ -3,7 +3,8 @@
     "rootNamespace": "Blocks.Gameplay.Stealth",
     "references": [
         "Blocks.Gameplay.Core",
-        "Unity.Netcode.Runtime"
+        "Unity.Netcode.Runtime",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

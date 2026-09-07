@@ -118,7 +118,10 @@ namespace Blocks.Gameplay.Stealth
                 {
                     bestSqrDistance = sqrDistance;
                     target = playerState.transform;
-                    strength = StrengthAtDistance(distance);
+
+                    // A crouching player is still seen, but registers far more slowly. That is what
+                    // makes crouch a stealth action rather than just a slower walk.
+                    strength = StrengthAtDistance(distance) * VisibilityOf(playerState);
                 }
             }
 
@@ -166,6 +169,22 @@ namespace Blocks.Gameplay.Stealth
         #endregion
 
         #region Private Methods
+
+        /// <summary>
+        /// How visible a given player currently is, as a multiplier on detection strength. Standing
+        /// players return 1; crouching ones return whatever their <see cref="PlayerCrouch"/> is
+        /// configured to expose.
+        /// </summary>
+        /// <remarks>
+        /// Looked up per scan rather than cached, because a player can stand or crouch at any time
+        /// and a stale multiplier would let someone break line of sight while crouched and stay
+        /// "hidden" after standing back up.
+        /// </remarks>
+        private float VisibilityOf(CorePlayerState playerState)
+        {
+            PlayerCrouch crouch = playerState.GetComponent<PlayerCrouch>();
+            return crouch != null ? crouch.VisibilityMultiplier : 1f;
+        }
 
         /// <summary>
         /// Maps distance to a 0..1 visibility multiplier, lerping from 1 at the guard's feet down to

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Blocks.Gameplay.Core;
 using Unity.AI.Navigation;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -166,6 +167,66 @@ namespace Blocks.Gameplay.Stealth.Editor
                 $"Checked {brains.Length} guard(s); added missing components to {upgraded}.\n\n" +
                 "Layer masks were refreshed on all of them.\n\n" +
                 "Save the scene (Ctrl+S) to keep this.",
+                "OK");
+        }
+
+        /// <summary>
+        /// Adds <see cref="PlayerCrouch"/> to every player prefab in the project that has a
+        /// <see cref="CoreMovement"/>.
+        /// </summary>
+        /// <remarks>
+        /// Applied to the prefab asset rather than a scene instance so it survives respawns: the
+        /// player is spawned from the prefab by Netcode, so a component added only to an instance
+        /// would vanish the first time the player respawns.
+        /// </remarks>
+        [MenuItem("Tools/Stealth/Add Crouch To Player Prefabs", false, 3)]
+        public static void AddCrouchToPlayerPrefabs()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:Prefab");
+            int modified = 0;
+            System.Text.StringBuilder names = new System.Text.StringBuilder();
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null)
+                {
+                    continue;
+                }
+
+                // The player is identified by carrying the movement motor, not by name, so renamed
+                // or duplicated player prefabs are still found.
+                if (prefab.GetComponent<CoreMovement>() == null)
+                {
+                    continue;
+                }
+
+                if (prefab.GetComponent<PlayerCrouch>() != null)
+                {
+                    continue;
+                }
+
+                GameObject root = PrefabUtility.LoadPrefabContents(path);
+                if (root.GetComponent<PlayerCrouch>() == null)
+                {
+                    root.AddComponent<PlayerCrouch>();
+                    PrefabUtility.SaveAsPrefabAsset(root, path);
+                    modified++;
+                    names.AppendLine("  " + System.IO.Path.GetFileNameWithoutExtension(path));
+                }
+                PrefabUtility.UnloadPrefabContents(root);
+            }
+
+            AssetDatabase.SaveAssets();
+
+            EditorUtility.DisplayDialog(
+                "Stealth Setup",
+                modified > 0
+                    ? $"Added PlayerCrouch to {modified} player prefab(s):\n\n{names}\n" +
+                      "Hold Left Ctrl in play mode to crouch."
+                    : "No player prefabs needed changing.\n\nEither crouch is already added, or no " +
+                      "prefab in the project has a CoreMovement component.",
                 "OK");
         }
 
