@@ -48,3 +48,7 @@ crashlytics-build.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Unity crash-recovery dumps: binary snapshots, not usable scenes
+/[Aa]ssets/_[Rr]ecovery/
+/[Aa]ssets/_[Rr]ecovery.meta
