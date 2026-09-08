@@ -99,6 +99,9 @@ namespace Blocks.Gameplay.Stealth
         /// <summary>
         /// Replicated 0..1 detection meter. Server writes, everyone reads.
         /// </summary>
+        [Tooltip("Awareness a guard jumps to when hit by a shot it survives. Below 1 it turns and looks; at 1 it goes straight to hunting you.")]
+        [SerializeField, Range(0f, 1f)] private float awarenessWhenShot = 0.9f;
+
         private readonly NetworkVariable<float> m_Awareness = new NetworkVariable<float>(
             0f,
             NetworkVariableReadPermission.Everyone,
@@ -202,6 +205,34 @@ namespace Blocks.Gameplay.Stealth
         /// </summary>
         /// <param name="origin">Muzzle position.</param>
         /// <param name="endPoint">Where the shot terminated.</param>
+        /// <summary>
+        /// Tells the guard it was shot at from somewhere, so it stops and looks that way.
+        /// </summary>
+        /// <remarks>
+        /// Being hit is information a guard plainly has, and ignoring it is the single most obvious
+        /// way for the AI to look broken: you shoot someone in the back and they keep strolling.
+        ///
+        /// This reuses the ordinary awareness path rather than forcing a state. Feeding the position
+        /// in as the last known position means the existing states do the work — Suspicious stops and
+        /// turns toward it, Investigating walks to it — and if the guard then actually sees you,
+        /// escalation to Alerted happens through the same rules as being spotted any other way.
+        ///
+        /// Server only: awareness and the alert state are server-authored, and the resulting turn
+        /// reaches clients through NetworkTransform.
+        /// </remarks>
+        /// <param name="worldPosition">Where the shot came from.</param>
+        public void ReportAttackedFrom(Vector3 worldPosition)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            m_LastKnownPosition = worldPosition;
+            m_HasLastKnownPosition = true;
+            m_Awareness.Value = Mathf.Max(m_Awareness.Value, awarenessWhenShot);
+        }
+
         public void ReportShot(Vector3 origin, Vector3 endPoint)
         {
             ShowShotRpc(origin, endPoint);

@@ -34,6 +34,9 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Seconds the body stays before it is removed, so the kill is visible rather than the guard blinking out.")]
         [SerializeField, Min(0f)] private float despawnDelay = 1.5f;
 
+        /// <summary>How far back along a bullet's path to place an unidentified shooter.</summary>
+        private const float TracebackDistance = 10f;
+
         private bool m_Died;
 
         private readonly NetworkVariable<float> m_Health = new NetworkVariable<float>(
@@ -120,6 +123,13 @@ namespace Blocks.Gameplay.Stealth
             if (m_Health.Value <= 0f)
             {
                 Die();
+                return;
+            }
+
+            // Survived it: turn and look at whoever fired.
+            if (TryGetComponent(out GuardBrain brain) && TryLocateAttacker(info, out Vector3 from))
+            {
+                brain.ReportAttackedFrom(from);
             }
         }
 
@@ -135,6 +145,40 @@ namespace Blocks.Gameplay.Stealth
         /// The collider goes immediately, otherwise a dead guard still blocks the player's shots and
         /// soaks bullets meant for whoever is behind it.
         /// </remarks>
+        /// <summary>
+        /// Works out where a shot came from.
+        /// </summary>
+        /// <remarks>
+        /// The attacker's own position is preferred, because that is what the guard should end up
+        /// facing. It is not always available: guards fire as
+        /// <see cref="GuardWeapon.GuardAttackerId"/> rather than a real client id, and a client can
+        /// disconnect between firing and the hit being processed.
+        ///
+        /// The fallback walks back up the bullet's own travel direction from the impact point, which
+        /// gives the right facing even when the shooter cannot be identified. The distance is
+        /// arbitrary: only the direction from the guard to that point is used.
+        /// </remarks>
+        private bool TryLocateAttacker(HitInfo info, out Vector3 position)
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager != null &&
+                manager.ConnectedClients.TryGetValue(info.attackerId, out NetworkClient client) &&
+                client.PlayerObject != null)
+            {
+                position = client.PlayerObject.transform.position;
+                return true;
+            }
+
+            if (info.impactForce.sqrMagnitude > Mathf.Epsilon)
+            {
+                position = info.hitPoint - info.impactForce.normalized * TracebackDistance;
+                return true;
+            }
+
+            position = default;
+            return false;
+        }
+
         private void Die()
         {
             m_Died = true;
