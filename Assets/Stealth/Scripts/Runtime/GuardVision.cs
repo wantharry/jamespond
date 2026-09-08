@@ -59,6 +59,9 @@ namespace Blocks.Gameplay.Stealth
         /// </summary>
         public float ViewAngle => viewAngle;
 
+        /// <summary>What blocks sight. Exposed so a visualisation can clip itself the same way.</summary>
+        public LayerMask ObstacleMask => obstacleMask;
+
         /// <summary>
         /// The transform this guard could see on the most recent <see cref="Scan"/>, or null.
         /// Retained purely so gizmos can draw the live sight line.

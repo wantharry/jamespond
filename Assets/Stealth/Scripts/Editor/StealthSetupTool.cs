@@ -428,6 +428,7 @@ namespace Blocks.Gameplay.Stealth.Editor
             guard.AddComponent<GuardBrain>();
             guard.AddComponent<GuardAnimatorDriver>();
             guard.AddComponent<GuardHealth>();
+            guard.AddComponent<GuardVisionCone>();
             guard.AddComponent<GuardDeathAnimation>();
 
             ConfigureVisionMasks(vision);
