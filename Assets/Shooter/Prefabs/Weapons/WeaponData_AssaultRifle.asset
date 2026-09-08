@@ -25,7 +25,7 @@ MonoBehaviour:
   recoilReturnSpeed: 10
   hitMask:
     serializedVersion: 2
-    m_Bits: 119
+    m_Bits: 375
   minShootingDistance: 0.5
   clipSize: 30
   reloadTime: 1

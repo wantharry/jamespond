@@ -25,9 +25,24 @@ namespace Blocks.Gameplay.Stealth.Editor
 
         private const string NavSurfaceName = "NavMesh Surface (Stealth)";
         private const string GuardRootName = "Guards";
+
+        /// <summary>Layer the guard body sits on: in the player weapons’ hit mask, out of the guards’ own.</summary>
+        private const string GuardLayerName = "Guard";
         private const int GuardCount = 3;
         private const int WaypointsPerGuard = 3;
         private const float PatrolRadius = 9f;
+
+        /// <summary>The visual half of the player prefab, without any of its player-only components.</summary>
+        private const string PlayerVisualPath = "Assets/Core/Art/Models/Armature_Core.prefab";
+
+        /// <summary>Geometry only. The weapon *prefabs* are networked attachables and cannot be nested under a guard.</summary>
+        private const string WeaponModelPath = "Assets/Shooter/Art/Weapons/AssaultRifle/Geo_assaultRifle.fbx";
+
+        /// <summary>Sockets on the shared rig, best first. Right_Hand_Attach is the rig’s own weapon mount.</summary>
+        private static readonly string[] WeaponSocketNames = { "Right_Hand_Attach", "Right_Hand" };
+
+        /// <summary>Team-colour suffixes the sample ships, stripped before asking for the red variant.</summary>
+        private static readonly string[] TeamColourSuffixes = { "_white", "_blue", "_orange", "_red" };
 
         #endregion
 
@@ -66,6 +81,15 @@ namespace Blocks.Gameplay.Stealth.Editor
                 root = new GameObject(GuardRootName);
                 Undo.RegisterCreatedObjectUndo(root, "Create Guards Root");
             }
+            else
+            {
+                // Clear the previous batch. Without this a second run appends another set, leaving
+                // guards from an older build of this tool standing next to the new ones.
+                for (int i = root.transform.childCount - 1; i >= 0; i--)
+                {
+                    Undo.DestroyObjectImmediate(root.transform.GetChild(i).gameObject);
+                }
+            }
 
             int placed = 0;
             for (int i = 0; i < GuardCount; i++)
@@ -81,12 +105,15 @@ namespace Blocks.Gameplay.Stealth.Editor
             Selection.activeGameObject = root;
             SceneView.FrameLastActiveSceneView();
 
+            string report = DescribeGuards(root);
+            Debug.Log($"[StealthSetup] {report}", root);
+
             EditorUtility.DisplayDialog(
                 "Stealth Setup",
                 $"Baked the NavMesh and placed {placed} guard(s) under '{GuardRootName}'.\n\n" +
-                "Press Play, then Start Host. Guards only run on the server, so nothing moves " +
-                "until hosting begins.\n\n" +
-                "Select a guard to see its vision cone and patrol route in the Scene view.",
+                report + "\n\n" +
+                "SAVE THE SCENE NOW (Ctrl+S, not in Play mode). Guards live only in memory until you do.\n\n" +
+                "Then press Play and Start Host. Guards only run on the server, so nothing moves until hosting begins.",
                 "OK");
         }
 
@@ -317,15 +344,16 @@ namespace Blocks.Gameplay.Stealth.Editor
         /// </summary>
         private static void CreateGuard(Transform parent, Vector3 position, int index)
         {
-            GameObject guard = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            guard.name = $"Guard {index}";
+            GameObject guard = new GameObject($"Guard {index}");
             guard.transform.SetParent(parent, false);
-            guard.transform.position = position + Vector3.up * 1f;
+
+            // The pivot sits directly on the navmesh: the player model’s origin is at its feet,
+            // and GuardVision measures eye height upwards from the pivot. The old capsule needed a
+            // metre of offset only because a primitive’s pivot is its centre.
+            guard.transform.position = position;
             Undo.RegisterCreatedObjectUndo(guard, "Create Guard");
 
-            // The capsule's own collider would block the guard's sight rays and catch its own
-            // detection sphere, so it goes.
-            Object.DestroyImmediate(guard.GetComponent<Collider>());
+            Transform muzzle = AttachPlayerVisual(guard);
 
             NavMeshAgent agent = guard.AddComponent<NavMeshAgent>();
             agent.radius = 0.4f;
@@ -333,6 +361,8 @@ namespace Blocks.Gameplay.Stealth.Editor
             agent.speed = 1.8f;
             agent.angularSpeed = 320f;
             agent.acceleration = 12f;
+
+            AddBody(guard);
 
             // Netcode: scene-placed NetworkObjects are spawned automatically when hosting starts.
             // NetworkTransform is what makes the movement visible to connected clients.
@@ -343,11 +373,111 @@ namespace Blocks.Gameplay.Stealth.Editor
             GuardPatrol patrol = guard.AddComponent<GuardPatrol>();
             GuardWeapon weapon = guard.AddComponent<GuardWeapon>();
             guard.AddComponent<GuardBrain>();
+            guard.AddComponent<GuardAnimatorDriver>();
+            guard.AddComponent<GuardHealth>();
+            guard.AddComponent<GuardDeathAnimation>();
 
             ConfigureVisionMasks(vision);
             ConfigureWeaponMask(weapon);
+            ConfigureMuzzle(weapon, muzzle);
             CreatePatrolRoute(guard.transform, patrol, position, index);
-            TintGuard(guard);
+        }
+
+        /// <summary>
+        /// Summarises what the guards actually ended up with.
+        /// </summary>
+        /// <remarks>
+        /// Unity keeps running the last assemblies that compiled, so clicking this menu item while a
+        /// script error stands silently runs an older build of the tool and produces guards missing
+        /// whatever was added since. Reporting the parts makes that visible instead of leaving it to
+        /// be discovered in play.
+        /// </remarks>
+        private static string DescribeGuards(GameObject root)
+        {
+            int total = root.transform.childCount;
+            int armed = 0;
+            int killable = 0;
+            int muzzled = 0;
+
+            for (int i = 0; i < total; i++)
+            {
+                GameObject guard = root.transform.GetChild(i).gameObject;
+
+                if (guard.GetComponentInChildren<SkinnedMeshRenderer>(true) != null && guard.transform.Find("Visual") != null)
+                {
+                    // Body present; the weapon lives under the rig socket.
+                    armed += FindDescendant(guard.transform, "Weapon") != null ? 1 : 0;
+                    muzzled += FindDescendant(guard.transform, "Muzzle") != null ? 1 : 0;
+                }
+
+                if (guard.GetComponent<GuardHealth>() != null && guard.GetComponent<Collider>() != null)
+                {
+                    killable++;
+                }
+            }
+
+            return $"{total} guard(s): {armed} armed, {muzzled} firing from the barrel, {killable} killable.";
+        }
+
+        /// <summary>
+        /// Depth-first search for a descendant by exact name.
+        /// </summary>
+        private static Transform FindDescendant(Transform root, string name)
+        {
+            foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child.name == name)
+                {
+                    return child;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Points the weapon at the barrel tip built by <see cref="CreateMuzzle"/>.
+        /// </summary>
+        private static void ConfigureMuzzle(GuardWeapon weapon, Transform muzzle)
+        {
+            if (muzzle == null)
+            {
+                return;
+            }
+
+            SerializedObject so = new SerializedObject(weapon);
+            so.FindProperty("muzzle").objectReferenceValue = muzzle;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// Gives the guard a body the player can shoot.
+        /// </summary>
+        /// <remarks>
+        /// The collider goes on its own <c>Guard</c> layer, which is in the player weapons’ hit mask
+        /// but in neither the guards’ obstacle mask nor their own weapons’ hit mask. That is what
+        /// keeps guards shootable without them blocking each other’s line of sight or killing each
+        /// other in a crossfire.
+        ///
+        /// A guard’s own sight ray starts inside this collider, and Physics.Raycast does not report
+        /// a collider it originates within, so the body cannot blind its owner either.
+        /// </remarks>
+        private static void AddBody(GameObject guard)
+        {
+            int guardLayer = LayerMask.NameToLayer(GuardLayerName);
+            if (guardLayer >= 0)
+            {
+                guard.layer = guardLayer;
+            }
+            else
+            {
+                Debug.LogWarning($"[StealthSetup] No ‘{GuardLayerName}’ layer; guard left on Default, where its own bullets can hit it.", guard);
+            }
+
+            CapsuleCollider body = guard.AddComponent<CapsuleCollider>();
+            body.height = 1.8f;
+            body.radius = 0.3f;
+            body.center = new Vector3(0f, 0.9f, 0f);
         }
 
         /// <summary>
@@ -464,24 +594,211 @@ namespace Blocks.Gameplay.Stealth.Editor
         }
 
         /// <summary>
-        /// Gives guards a distinct colour so they are obvious against the sample level's grey.
+        /// Gives the guard the player’s own body, in the red team skin.
         /// </summary>
-        private static void TintGuard(GameObject guard)
+        /// <remarks>
+        /// Only the model is instantiated, never the player prefab. The player prefab carries a
+        /// NetworkObject, input, camera rigs and ability components; nesting it inside another
+        /// NetworkObject is invalid in Netcode and would give every guard a camera.
+        /// </remarks>
+        private static Transform AttachPlayerVisual(GameObject guard)
         {
-            Renderer renderer = guard.GetComponent<Renderer>();
-            if (renderer == null)
+            GameObject source = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerVisualPath);
+            if (source == null)
             {
-                return;
+                Debug.LogWarning($"[StealthSetup] No player model at {PlayerVisualPath}; guard {guard.name} has no body.", guard);
+                return null;
             }
 
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            if (shader == null)
+            GameObject visual = (GameObject)PrefabUtility.InstantiatePrefab(source, guard.transform);
+            visual.name = "Visual";
+            visual.transform.localPosition = Vector3.zero;
+            visual.transform.localRotation = Quaternion.identity;
+            Undo.RegisterCreatedObjectUndo(visual, "Create Guard Visual");
+
+            // CoreAnimator requires a CoreMovement and is a NetworkAnimator. A guard has neither, so
+            // it would log an error per guard on spawn. GuardAnimatorDriver drives the same
+            // controller from the guard’s own motion instead.
+            foreach (CoreAnimator playerAnimator in visual.GetComponentsInChildren<CoreAnimator>(true))
             {
-                return;
+                Object.DestroyImmediate(playerAnimator);
             }
 
-            Material material = new Material(shader) { color = new Color(0.75f, 0.15f, 0.15f) };
-            renderer.sharedMaterial = material;
+            // Any collider here would block the guard’s own sight rays and trip its detection
+            // sphere — the same reason the old capsule’s collider was removed.
+            foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
+            {
+                Object.DestroyImmediate(collider);
+            }
+
+            // The locomotion clips fire footstep and landing events. With CoreAnimator gone nothing
+            // answers them, and Unity logs a warning per event per guard.
+            foreach (Animator modelAnimator in visual.GetComponentsInChildren<Animator>(true))
+            {
+                if (modelAnimator.GetComponent<GuardAnimationEvents>() == null)
+                {
+                    modelAnimator.gameObject.AddComponent<GuardAnimationEvents>();
+                }
+            }
+
+            PaintRed(visual);
+            return AttachWeapon(visual);
+        }
+
+        /// <summary>
+        /// Puts a rifle in the guard’s hand, on the same rig socket the player’s weapon uses.
+        /// </summary>
+        /// <remarks>
+        /// This is the weapon *model*, not <c>Pfb_assaultRifle</c>. The weapon prefabs carry a
+        /// NetworkObject and an AttachableBehaviour and are spawned through WeaponController’s
+        /// networked attachment system; nesting one under the guard’s NetworkObject at scene-build
+        /// time is invalid. Guard damage is hitscan out of <see cref="GuardWeapon"/> and does not
+        /// read the model, so the gun here is purely what the player sees.
+        /// </remarks>
+        private static Transform AttachWeapon(GameObject visual)
+        {
+            Transform socket = FindWeaponSocket(visual);
+            if (socket == null)
+            {
+                Debug.LogWarning($"[StealthSetup] No weapon socket on the rig (looked for {string.Join(", ", WeaponSocketNames)}); guard is unarmed.", visual);
+                return null;
+            }
+
+            GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(WeaponModelPath);
+            if (model == null)
+            {
+                Debug.LogWarning($"[StealthSetup] No weapon model at {WeaponModelPath}; guard is unarmed.", visual);
+                return null;
+            }
+
+            GameObject weapon = (GameObject)PrefabUtility.InstantiatePrefab(model, socket);
+            weapon.name = "Weapon";
+            weapon.transform.localPosition = Vector3.zero;
+            weapon.transform.localRotation = Quaternion.identity;
+            Undo.RegisterCreatedObjectUndo(weapon, "Create Guard Weapon");
+
+            // A collider here would sit inside the guard’s own detection sphere and block its
+            // sight rays, the same reason the body colliders go.
+            foreach (Collider collider in weapon.GetComponentsInChildren<Collider>(true))
+            {
+                Object.DestroyImmediate(collider);
+            }
+
+            return CreateMuzzle(weapon, visual.transform.parent != null ? visual.transform.parent : visual.transform);
+        }
+
+        /// <summary>
+        /// Marks the barrel tip so shots leave the gun rather than the guard’s chest.
+        /// </summary>
+        /// <remarks>
+        /// The rifle model has no muzzle node — only grip, body and trigger meshes — so the tip is
+        /// measured instead: take the weapon’s combined render bounds and walk forward along the
+        /// guard’s facing to the front face. Measuring against the guard rather than the model avoids
+        /// guessing which local axis the artist pointed the barrel down.
+        ///
+        /// Parented to the weapon, so it tracks the hand through every animation.
+        /// </remarks>
+        private static Transform CreateMuzzle(GameObject weapon, Transform guard)
+        {
+            Renderer[] renderers = weapon.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                return null;
+            }
+
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+            {
+                bounds.Encapsulate(renderers[i].bounds);
+            }
+
+            Vector3 forward = guard.forward;
+            float reach = Vector3.Dot(bounds.extents, new Vector3(Mathf.Abs(forward.x), Mathf.Abs(forward.y), Mathf.Abs(forward.z)));
+
+            GameObject muzzle = new GameObject("Muzzle");
+            muzzle.transform.SetParent(weapon.transform, false);
+            muzzle.transform.position = bounds.center + forward * reach;
+            muzzle.transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
+            Undo.RegisterCreatedObjectUndo(muzzle, "Create Guard Muzzle");
+
+            return muzzle.transform;
+        }
+
+        /// <summary>
+        /// Finds the rig socket to hang the weapon from, preferring the dedicated attach point.
+        /// </summary>
+        private static Transform FindWeaponSocket(GameObject visual)
+        {
+            Transform[] bones = visual.GetComponentsInChildren<Transform>(true);
+            foreach (string socketName in WeaponSocketNames)
+            {
+                foreach (Transform bone in bones)
+                {
+                    if (bone.name == socketName)
+                    {
+                        return bone;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Swaps every material on the guard model for the red team variant the sample ships.
+        /// </summary>
+        /// <remarks>
+        /// Preferring the shipped <c>*_red</c> material over a runtime tint keeps the guard visually
+        /// identical to a red-team player — same shader, same maps, same smoothness. The tint is
+        /// only a fallback for materials with no red sibling.
+        /// </remarks>
+        private static void PaintRed(GameObject visual)
+        {
+            foreach (Renderer renderer in visual.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = renderer.sharedMaterials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    materials[i] = ToRed(materials[i]);
+                }
+
+                renderer.sharedMaterials = materials;
+            }
+        }
+
+        /// <summary>
+        /// Resolves a material to its red team sibling, falling back to a red-tinted copy.
+        /// </summary>
+        private static Material ToRed(Material source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            string baseName = source.name;
+            foreach (string suffix in TeamColourSuffixes)
+            {
+                if (baseName.EndsWith(suffix))
+                {
+                    baseName = baseName.Substring(0, baseName.Length - suffix.Length);
+                    break;
+                }
+            }
+
+            string wanted = baseName + "_red";
+            foreach (string guid in AssetDatabase.FindAssets($"{wanted} t:Material"))
+            {
+                Material candidate = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
+                if (candidate != null && candidate.name == wanted)
+                {
+                    return candidate;
+                }
+            }
+
+            // No shipped red variant: copy the original so the tint cannot leak onto the player,
+            // who shares these material assets.
+            return new Material(source) { color = new Color(0.75f, 0.15f, 0.15f) };
         }
 
         #endregion
