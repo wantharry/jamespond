@@ -135,6 +135,83 @@ namespace ClaudeBridge
                 return DescribeState();
             }
 
+            if (command.Equals("stop", StringComparison.OrdinalIgnoreCase))
+            {
+                // Unity 6 has no Edit/Play menu item; play mode is a toolbar button, so it can only
+                // be left through the API.
+                if (!EditorApplication.isPlaying)
+                {
+                    return "already stopped";
+                }
+
+                EditorApplication.isPlaying = false;
+                return "leaving play mode";
+            }
+
+            if (command.StartsWith("serialization", StringComparison.OrdinalIgnoreCase))
+            {
+                // ProjectSettings/EditorSettings.asset can say ForceText while the editor is running
+                // with something else in memory, so report what the editor actually believes.
+                string argument = command.Substring("serialization".Length).Trim();
+                if (argument.Equals("text", StringComparison.OrdinalIgnoreCase))
+                {
+                    EditorSettings.serializationMode = SerializationMode.ForceText;
+                    AssetDatabase.SaveAssets();
+                }
+
+                return "serializationMode = " + EditorSettings.serializationMode;
+            }
+
+            if (command.Equals("reserialize", StringComparison.OrdinalIgnoreCase))
+            {
+                // A scene already on disk in binary stays binary through an ordinary save. Forcing a
+                // reserialize rewrites it in whatever the current serialization mode is.
+                string path = SceneManager.GetActiveScene().path;
+                if (string.IsNullOrEmpty(path))
+                {
+                    status = "ERROR";
+                    return "active scene has never been saved, so it has no path to reserialize";
+                }
+
+                AssetDatabase.ForceReserializeAssets(new[] { path });
+                AssetDatabase.Refresh();
+                return "reserialized " + path + " as " + EditorSettings.serializationMode;
+            }
+
+            if (command.StartsWith("open ", StringComparison.OrdinalIgnoreCase))
+            {
+                string path = command.Substring(5).Trim();
+                if (EditorApplication.isPlayingOrWillChangePlaymode)
+                {
+                    status = "REFUSED";
+                    return "in play mode";
+                }
+
+                Scene opened = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+                status = opened.IsValid() ? "OK" : "ERROR";
+                return opened.IsValid() ? "opened " + opened.path : "could not open " + path;
+            }
+
+            if (command.Equals("guards", StringComparison.OrdinalIgnoreCase))
+            {
+                // Asks the loaded scene what it contains. Grepping the scene file cannot answer this
+                // when Unity has written it in binary, where GUIDs are not stored as searchable text.
+                var brains = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+                int guards = 0, armed = 0, killable = 0, aiming = 0;
+                foreach (MonoBehaviour behaviour in brains)
+                {
+                    if (behaviour == null || behaviour.GetType().Name != "GuardBrain") continue;
+                    guards++;
+                    GameObject go = behaviour.gameObject;
+                    if (go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null) armed++;
+                    if (go.GetComponent<Collider>() != null) killable++;
+                    foreach (Transform t in go.GetComponentsInChildren<Transform>(true))
+                        if (t.name == "Muzzle") { aiming++; break; }
+                }
+
+                return $"guards: {guards}, with a body: {armed}, with a collider: {killable}, with a muzzle: {aiming}";
+            }
+
             if (command.Equals("save", StringComparison.OrdinalIgnoreCase))
             {
                 if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -161,7 +238,7 @@ namespace ClaudeBridge
             }
 
             status = "ERROR";
-            return "unknown command. Supported: ping | info | save | menu <Menu/Path>";
+            return "unknown command. Supported: ping | info | stop | save | serialization [text] | menu <Menu/Path>";
         }
 
         /// <summary>

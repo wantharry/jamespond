@@ -36,6 +36,9 @@ namespace Blocks.Gameplay.Stealth.Editor
         private const string PlayerVisualPath = "Assets/Core/Art/Models/Armature_Core.prefab";
 
         /// <summary>Geometry only. The weapon *prefabs* are networked attachables and cannot be nested under a guard.</summary>
+        /// <summary>The player’s controller. Its UpperBody layer is what makes the rifle be held and aimed.</summary>
+        private const string ShooterControllerPath = "Assets/Shooter/Art/Animator/ShooterAnimator.controller";
+
         private const string WeaponModelPath = "Assets/Shooter/Art/Weapons/AssaultRifle/Geo_assaultRifle.fbx";
 
         /// <summary>Sockets on the shared rig, best first. Right_Hand_Attach is the rig’s own weapon mount.</summary>
@@ -61,6 +64,17 @@ namespace Blocks.Gameplay.Stealth.Editor
         [MenuItem("Tools/Stealth/Set Up Guards In Current Scene", false, 0)]
         public static void SetUpGuards()
         {
+            // Nothing in this tool works in play mode, and the failures are quiet: 
+            // PrefabUtility.InstantiatePrefab returns null, so guards come out bodiless with a
+            // NullReferenceException each; MarkAllScenesDirty throws; and anything that does get
+            // built is discarded the moment play stops. Refusing outright beats half-building.
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Report("Stop play mode first. Guards built during play are discarded when play ends, " +
+                       "and the editor APIs this tool needs do not work while playing.");
+                return;
+            }
+
             NavMeshSurface surface = EnsureNavMeshSurface();
 
             EditorUtility.DisplayProgressBar("Stealth Setup", "Baking NavMesh...", 0.3f);
@@ -433,14 +447,22 @@ namespace Blocks.Gameplay.Stealth.Editor
         /// </remarks>
         private static string DescribeGuards(GameObject root)
         {
-            int total = root.transform.childCount;
+            // Only children with a brain are guards. CreatePatrolRoute parents each route as a
+            // sibling of its guard, so counting every child reports double.
+            int total = 0;
             int armed = 0;
             int killable = 0;
             int muzzled = 0;
 
-            for (int i = 0; i < total; i++)
+            for (int i = 0; i < root.transform.childCount; i++)
             {
                 GameObject guard = root.transform.GetChild(i).gameObject;
+                if (guard.GetComponent<GuardBrain>() == null)
+                {
+                    continue;
+                }
+
+                total++;
 
                 if (guard.GetComponentInChildren<SkinnedMeshRenderer>(true) != null && guard.transform.Find("Visual") != null)
                 {
@@ -680,8 +702,34 @@ namespace Blocks.Gameplay.Stealth.Editor
                 }
             }
 
+            UseShooterController(visual);
             PaintRed(visual);
             return AttachWeapon(visual);
+        }
+
+        /// <summary>
+        /// Swaps the model onto the player’s shooter controller so the rifle is carried and aimed.
+        /// </summary>
+        /// <remarks>
+        /// The model ships with the Core locomotion controller, which has no weapon poses — the arms
+        /// hang at the sides and the gun floats in one hand. The shooter controller adds the
+        /// UpperBody layer that grips and levels the weapon. GuardAnimatorDriver feeds it.
+        /// </remarks>
+        private static void UseShooterController(GameObject visual)
+        {
+            RuntimeAnimatorController controller =
+                AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(ShooterControllerPath);
+
+            if (controller == null)
+            {
+                Debug.LogWarning($"[StealthSetup] No shooter controller at {ShooterControllerPath}; guards keep the Core poses and will not hold the gun properly.", visual);
+                return;
+            }
+
+            foreach (Animator modelAnimator in visual.GetComponentsInChildren<Animator>(true))
+            {
+                modelAnimator.runtimeAnimatorController = controller;
+            }
         }
 
         /// <summary>

@@ -1,5 +1,10 @@
+using System;
 using Blocks.Gameplay.Core;
 using UnityEngine;
+
+// System.Random and UnityEngine.Random are both in scope once System is imported; every Random
+// here means the engine one.
+using Random = UnityEngine.Random;
 
 namespace Blocks.Gameplay.Stealth
 {
@@ -39,6 +44,16 @@ namespace Blocks.Gameplay.Stealth
         /// can never collide with a real client id.
         /// </summary>
         public const ulong GuardAttackerId = ulong.MaxValue;
+
+        #endregion
+
+        #region Events
+
+        /// <summary>
+        /// Raised on every peer when a shot is drawn, so visuals can react to the same shots the
+        /// player sees rather than to the server-only fire logic.
+        /// </summary>
+        public event Action ShotRendered;
 
         #endregion
 
@@ -357,6 +372,7 @@ namespace Blocks.Gameplay.Stealth
             }
 
             SpawnTracer(origin, endPoint);
+            ShotRendered?.Invoke();
         }
 
         /// <summary>
