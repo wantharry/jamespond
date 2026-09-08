@@ -17,6 +17,15 @@ namespace Blocks.Gameplay.Stealth
     /// the detection uses. Drawing an unclipped wedge would be worse than drawing nothing: it would
     /// show the cone lying across a wall the guard cannot actually see through, and the player would
     /// learn to distrust it.
+    ///
+    /// It is drawn flat on the floor rather than at eye level, so it reads as an area on the ground
+    /// the player can stay out of. The rays are still cast from the eye, so the shape describes what
+    /// the guard can see: it reaches over a waist-high crate the guard looks across, and stops at a
+    /// wall it cannot.
+    ///
+    /// The fan is flat, at the height of the guard's own feet. On stairs or a slope it will cut into
+    /// the floor; every sample level here is flat enough that per-vertex ground sampling is not worth
+    /// the extra raycast each.
     /// </remarks>
     [RequireComponent(typeof(GuardVision))]
     public class GuardVisionCone : MonoBehaviour
@@ -27,7 +36,7 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Rays used to build the cone. More is smoother against complex geometry and costs a raycast each.")]
         [SerializeField, Range(8, 128)] private int segments = 48;
 
-        [Tooltip("Lifts the cone off the floor so it does not z-fight with the ground.")]
+        [Tooltip("Lifts the cone off the floor so it does not z-fight with the ground. Raise it if the cone flickers.")]
         [SerializeField, Min(0f)] private float groundOffset = 0.05f;
 
         [Header("Colour")]
@@ -132,13 +141,19 @@ namespace Blocks.Gameplay.Stealth
         {
             // Local space, because the holder sits at the guard's own transform: the cone then turns
             // with the guard for free instead of being rebuilt in world space every frame.
-            Vector3 eye = transform.InverseTransformPoint(m_Vision.EyePosition);
+            //
+            // Two different heights on purpose. Rays are cast from the eye, because that is where
+            // GuardVision casts from and the cone has to agree with what the guard can actually see.
+            // The mesh is laid on the floor at the guard's feet, because a wedge floating at chest
+            // height is read as an object in the world rather than as a marked-out area, and it hides
+            // the ground the player is trying to judge.
+            Vector3 floor = Vector3.up * groundOffset;
             Vector3 origin = m_Vision.EyePosition;
             float radius = m_Vision.ViewRadius;
             float half = m_Vision.ViewAngle * 0.5f;
             float step = m_Vision.ViewAngle / segments;
 
-            m_Vertices[0] = eye + Vector3.up * groundOffset;
+            m_Vertices[0] = floor;
 
             for (int i = 0; i <= segments; i++)
             {
@@ -152,7 +167,7 @@ namespace Blocks.Gameplay.Stealth
                     reach = hit.distance;
                 }
 
-                m_Vertices[i + 1] = eye + direction * reach + Vector3.up * groundOffset;
+                m_Vertices[i + 1] = floor + direction * reach;
             }
 
             m_Mesh.Clear();
