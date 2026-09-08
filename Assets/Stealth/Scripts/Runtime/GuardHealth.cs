@@ -34,6 +34,8 @@ namespace Blocks.Gameplay.Stealth
         [Tooltip("Seconds the body stays before it is removed, so the kill is visible rather than the guard blinking out.")]
         [SerializeField, Min(0f)] private float despawnDelay = 1.5f;
 
+        private bool m_Died;
+
         private readonly NetworkVariable<float> m_Health = new NetworkVariable<float>(
             0f,
             NetworkVariableReadPermission.Everyone,
@@ -69,6 +71,15 @@ namespace Blocks.Gameplay.Stealth
         public override void OnNetworkDespawn()
         {
             m_Health.OnValueChanged -= OnHealthChanged;
+
+            // Despawn(false) leaves the in-scene object in place, so the body has to be hidden
+            // explicitly. Guarded on death so a despawn from a shutdown or scene unload does not
+            // blank out guards that are still alive.
+            if (m_Died)
+            {
+                gameObject.SetActive(false);
+            }
+
             base.OnNetworkDespawn();
         }
 
@@ -81,6 +92,8 @@ namespace Blocks.Gameplay.Stealth
             {
                 return;
             }
+
+            m_Died = true;
 
             if (TryGetComponent(out GuardDeathAnimation death))
             {
@@ -124,6 +137,8 @@ namespace Blocks.Gameplay.Stealth
         /// </remarks>
         private void Die()
         {
+            m_Died = true;
+
             foreach (Collider collider in GetComponentsInChildren<Collider>(true))
             {
                 collider.enabled = false;
@@ -164,7 +179,11 @@ namespace Blocks.Gameplay.Stealth
 
             if (NetworkObject != null && NetworkObject.IsSpawned)
             {
-                NetworkObject.Despawn();
+                // Despawn(false) rather than the default Despawn(true): destroying an in-scene
+                // NetworkObject is unsupported. Netcode warns about it and the scene's object
+                // registry still expects the object to exist, which misbehaves on a scene reload.
+                // OnNetworkDespawn hides the body on every peer instead.
+                NetworkObject.Despawn(false);
             }
         }
 

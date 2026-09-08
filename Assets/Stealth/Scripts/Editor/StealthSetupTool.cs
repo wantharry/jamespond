@@ -46,6 +46,13 @@ namespace Blocks.Gameplay.Stealth.Editor
 
         #endregion
 
+        #region Fields
+
+        /// <summary>Suppresses modal dialogs while the tool is driven from outside the editor.</summary>
+        private static bool s_Silent;
+
+        #endregion
+
         #region Menu Items
 
         /// <summary>
@@ -65,13 +72,11 @@ namespace Blocks.Gameplay.Stealth.Editor
             NavMeshTriangulation triangulation = NavMesh.CalculateTriangulation();
             if (triangulation.vertices == null || triangulation.vertices.Length == 0)
             {
-                EditorUtility.DisplayDialog(
-                    "Stealth Setup",
+                Report(
                     "The NavMesh baked empty, so there is nowhere to place guards.\n\n" +
                     "The usual cause is that the level geometry is not marked Navigation Static, " +
                     "or the NavMesh Surface's Collect Objects setting is not picking it up.\n\n" +
-                    "Select '" + NavSurfaceName + "' in the Hierarchy and check its settings.",
-                    "OK");
+                    "Select '" + NavSurfaceName + "' in the Hierarchy and check its settings.");
                 return;
             }
 
@@ -108,13 +113,11 @@ namespace Blocks.Gameplay.Stealth.Editor
             string report = DescribeGuards(root);
             Debug.Log($"[StealthSetup] {report}", root);
 
-            EditorUtility.DisplayDialog(
-                "Stealth Setup",
+            Report(
                 $"Baked the NavMesh and placed {placed} guard(s) under '{GuardRootName}'.\n\n" +
                 report + "\n\n" +
                 "SAVE THE SCENE NOW (Ctrl+S, not in Play mode). Guards live only in memory until you do.\n\n" +
-                "Then press Play and Start Host. Guards only run on the server, so nothing moves until hosting begins.",
-                "OK");
+                "Then press Play and Start Host. Guards only run on the server, so nothing moves until hosting begins.");
         }
 
         /// <summary>
@@ -260,6 +263,42 @@ namespace Blocks.Gameplay.Stealth.Editor
         /// <summary>
         /// Removes everything this tool created, for a clean retry.
         /// </summary>
+        /// <summary>
+        /// Runs the guard setup without any modal dialog, for automation.
+        /// </summary>
+        /// <remarks>
+        /// EditorUtility.DisplayDialog blocks until a human clicks OK. Anything driving the editor
+        /// from outside — the Claude bridge, a CI step — hangs on it forever, because the click it
+        /// is waiting for can never arrive. This variant reports to the console instead.
+        /// </remarks>
+        [MenuItem("Tools/Stealth/Set Up Guards (No Dialog)", false, 4)]
+        public static void SetUpGuardsSilently()
+        {
+            s_Silent = true;
+            try
+            {
+                SetUpGuards();
+            }
+            finally
+            {
+                s_Silent = false;
+            }
+        }
+
+        /// <summary>
+        /// Shows a message as a dialog, or logs it when running unattended.
+        /// </summary>
+        private static void Report(string message)
+        {
+            if (s_Silent)
+            {
+                Debug.Log("[StealthSetup] " + message.Replace("\n\n", " "));
+                return;
+            }
+
+            EditorUtility.DisplayDialog("Stealth Setup", message, "OK");
+        }
+
         [MenuItem("Tools/Stealth/Remove Generated Guards", false, 20)]
         public static void RemoveGuards()
         {
