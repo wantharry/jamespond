@@ -31,8 +31,8 @@ namespace Blocks.Gameplay.Stealth
         #region Fields & Properties
 
         [Header("Input")]
-        [Tooltip("Key that crouches. Left Ctrl by default.")]
-        [SerializeField] private Key crouchKey = Key.LeftCtrl;
+        [Tooltip("Key that crouches. Q by default.")]
+        [SerializeField] private Key crouchKey = Key.Q;
 
         [Tooltip("Tap to toggle crouch instead of holding the key down.")]
         [SerializeField] private bool toggleMode;

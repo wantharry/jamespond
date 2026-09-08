@@ -268,7 +268,7 @@ namespace Blocks.Gameplay.Stealth.Editor
                 "Stealth Setup",
                 modified > 0
                     ? $"Added PlayerCrouch to {modified} player prefab(s):\n\n{names}\n" +
-                      "Hold Left Ctrl in play mode to crouch."
+                      "Hold Q in play mode to crouch."
                     : "No player prefabs needed changing.\n\nEither crouch is already added, or no " +
                       "prefab in the project has a CoreMovement component.",
                 "OK");

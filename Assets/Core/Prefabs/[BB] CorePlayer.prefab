@@ -417,7 +417,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Blocks.Gameplay.Stealth::Blocks.Gameplay.Stealth.PlayerCrouch
   ShowTopMostFoldoutHeaderGroup: 1
-  crouchKey: 55
+  crouchKey: 31
   toggleMode: 0
   crouchSpeed: 1.6
   crouchHeight: 1
