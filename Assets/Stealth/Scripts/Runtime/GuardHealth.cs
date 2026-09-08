@@ -126,10 +126,17 @@ namespace Blocks.Gameplay.Stealth
                 return;
             }
 
-            // Survived it: turn and look at whoever fired.
-            if (TryGetComponent(out GuardBrain brain) && TryLocateAttacker(info, out Vector3 from))
+            // Survived it: turn and look at whoever fired, and let the others hear it. Broadcasting
+            // even when this guard has no brain matters — the shot was still audible.
+            if (TryLocateAttacker(info, out Vector3 from))
             {
-                brain.ReportAttackedFrom(from);
+                GuardBrain brain = GetComponent<GuardBrain>();
+                if (brain != null)
+                {
+                    brain.ReportAttackedFrom(from);
+                }
+
+                GuardBrain.BroadcastShot(from, brain);
             }
         }
 

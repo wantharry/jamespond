@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.AI;
@@ -89,6 +90,13 @@ namespace Blocks.Gameplay.Stealth
         private GuardWeapon m_Weapon;
 
         private Transform m_Target;
+        /// <summary>Every spawned guard, so a shot can be offered to each without a physics query.</summary>
+        /// <remarks>
+        /// A registry rather than Physics.OverlapSphere: hearing should not depend on colliders or on
+        /// which layer a guard happens to sit on, and there are only ever a handful of guards.
+        /// </remarks>
+        private static readonly List<GuardBrain> s_Spawned = new List<GuardBrain>();
+
         private Vector3 m_LastKnownPosition;
         private float m_SearchTimer;
         private bool m_HasLastKnownPosition;
@@ -99,6 +107,12 @@ namespace Blocks.Gameplay.Stealth
         /// <summary>
         /// Replicated 0..1 detection meter. Server writes, everyone reads.
         /// </summary>
+        [Tooltip("How far this guard hears gunfire, in metres. Hearing ignores walls, because sound goes round corners.")]
+        [SerializeField, Min(0f)] private float hearingRadius = 18f;
+
+        [Tooltip("Awareness a guard jumps to on hearing a shot nearby. Lower than being hit: it heard something, it was not shot.")]
+        [SerializeField, Range(0f, 1f)] private float awarenessWhenHeard = 0.6f;
+
         [Tooltip("Awareness a guard jumps to when hit by a shot it survives. Below 1 it turns and looks; at 1 it goes straight to hunting you.")]
         [SerializeField, Range(0f, 1f)] private float awarenessWhenShot = 0.9f;
 
@@ -156,6 +170,11 @@ namespace Blocks.Gameplay.Stealth
         {
             m_State.OnValueChanged += HandleStateChanged;
 
+            if (!s_Spawned.Contains(this))
+            {
+                s_Spawned.Add(this);
+            }
+
             // Only the server simulates the guard. Disabling the agent elsewhere stops clients
             // fighting the replicated transform with their own local pathfinding.
             if (!IsServer)
@@ -184,6 +203,7 @@ namespace Blocks.Gameplay.Stealth
         public override void OnNetworkDespawn()
         {
             m_State.OnValueChanged -= HandleStateChanged;
+            s_Spawned.Remove(this);
         }
 
         private void Update()
@@ -205,6 +225,54 @@ namespace Blocks.Gameplay.Stealth
         /// </summary>
         /// <param name="origin">Muzzle position.</param>
         /// <param name="endPoint">Where the shot terminated.</param>
+        /// <summary>
+        /// Lets every guard in earshot know a shot was fired from somewhere.
+        /// </summary>
+        /// <remarks>
+        /// Without this a player can stand in one spot and pick guards off one at a time, because
+        /// only the guard actually hit ever reacts.
+        ///
+        /// Distance only, deliberately: hearing is not line of sight, and requiring one would mean a
+        /// guard on the far side of a doorway ignores a rifle going off next to it.
+        /// </remarks>
+        /// <param name="worldPosition">Where the shot came from.</param>
+        /// <param name="firedAt">The guard that was hit, which reacts through
+        /// <see cref="ReportAttackedFrom"/> instead and should not also be told it heard something.</param>
+        public static void BroadcastShot(Vector3 worldPosition, GuardBrain firedAt)
+        {
+            foreach (GuardBrain brain in s_Spawned)
+            {
+                if (brain == null || brain == firedAt || !brain.IsServer)
+                {
+                    continue;
+                }
+
+                if (Vector3.Distance(brain.transform.position, worldPosition) <= brain.hearingRadius)
+                {
+                    brain.ReportHeardShot(worldPosition);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tells the guard it heard a shot from somewhere, so it looks that way.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="ReportAttackedFrom"/> and weaker on purpose: a guard that was hit
+        /// knows exactly what happened, one that merely heard it is only curious.
+        /// </remarks>
+        public void ReportHeardShot(Vector3 worldPosition)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            m_LastKnownPosition = worldPosition;
+            m_HasLastKnownPosition = true;
+            m_Awareness.Value = Mathf.Max(m_Awareness.Value, awarenessWhenHeard);
+        }
+
         /// <summary>
         /// Tells the guard it was shot at from somewhere, so it stops and looks that way.
         /// </summary>
