@@ -132,6 +132,19 @@ namespace Blocks.Gameplay.Stealth
         /// <summary>
         /// Current detection meter in the range 0..1. Safe to read on any peer; drive a HUD from this.
         /// </summary>
+        /// <summary>Guards currently spawned and alive.</summary>
+        public static int AliveCount => s_Spawned.Count;
+
+        /// <summary>
+        /// True once at least one guard has ever spawned this session.
+        /// </summary>
+        /// <remarks>
+        /// Without this, <see cref="AliveCount"/> of zero is ambiguous: it reads the same before the
+        /// guards spawn as it does after the last one dies, so anything waiting for the level to be
+        /// cleared would fire immediately on load.
+        /// </remarks>
+        public static bool AnyHaveSpawned { get; private set; }
+
         public float Awareness => m_Awareness.Value;
 
         /// <summary>
@@ -173,6 +186,7 @@ namespace Blocks.Gameplay.Stealth
             if (!s_Spawned.Contains(this))
             {
                 s_Spawned.Add(this);
+                AnyHaveSpawned = true;
             }
 
             // Only the server simulates the guard. Disabling the agent elsewhere stops clients

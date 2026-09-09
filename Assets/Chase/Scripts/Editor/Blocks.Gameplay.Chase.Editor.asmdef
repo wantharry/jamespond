@@ -1,0 +1,21 @@
+{
+    "name": "Blocks.Gameplay.Chase.Editor",
+    "rootNamespace": "Blocks.Gameplay.Chase.Editor",
+    "references": [
+        "Blocks.Gameplay.Chase",
+        "Blocks.Gameplay.Core",
+        "Blocks.Gameplay.Stealth",
+        "Unity.Netcode.Runtime",
+        "Unity.AI.Navigation",
+        "Unity.Cinemachine"
+    ],
+    "includePlatforms": [ "Editor" ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
