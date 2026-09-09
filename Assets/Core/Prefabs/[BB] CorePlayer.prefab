@@ -524,6 +524,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 3747493943479594404, guid: d44e26f98f3e448988291f85f97cc468, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5001140451625184272}
+    - targetCorrespondingSourceObject: {fileID: 3747493943479594404, guid: d44e26f98f3e448988291f85f97cc468, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7738955789524245400}
   m_SourcePrefab: {fileID: 100100000, guid: d44e26f98f3e448988291f85f97cc468, type: 3}
 --- !u!137 &3431930237784142499 stripped
 SkinnedMeshRenderer:
@@ -586,6 +589,21 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &7738955789524245400
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6966453141964727595}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02be3073a7e7cdb4386ad7286a3d65d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Blocks.Gameplay.Stealth::Blocks.Gameplay.Stealth.CrouchIK
+  hipDrop: 0.45
+  forwardLean: 12
+  blendSpeed: 6
 --- !u!4 &7774902449294704529 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4560480999191295774, guid: d44e26f98f3e448988291f85f97cc468, type: 3}

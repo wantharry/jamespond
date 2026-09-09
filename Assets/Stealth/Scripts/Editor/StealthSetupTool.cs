@@ -162,10 +162,8 @@ namespace Blocks.Gameplay.Stealth.Editor
             GuardBrain[] brains = Object.FindObjectsByType<GuardBrain>(FindObjectsInactive.Include);
             if (brains.Length == 0)
             {
-                EditorUtility.DisplayDialog(
-                    "Stealth Setup",
-                    "No guards found in the open scene.\n\nUse 'Set Up Guards In Current Scene' first.",
-                    "OK");
+                Report(
+                    "No guards found in the open scene.\n\nUse 'Set Up Guards In Current Scene' first.");
                 return;
             }
 
@@ -206,12 +204,10 @@ namespace Blocks.Gameplay.Stealth.Editor
 
             EditorSceneManager.MarkAllScenesDirty();
 
-            EditorUtility.DisplayDialog(
-                "Stealth Setup",
+            Report(
                 $"Checked {brains.Length} guard(s); added missing components to {upgraded}.\n\n" +
                 "Layer masks were refreshed on all of them.\n\n" +
-                "Save the scene (Ctrl+S) to keep this.",
-                "OK");
+                "Save the scene (Ctrl+S) to keep this.");
         }
 
         /// <summary>
@@ -246,32 +242,42 @@ namespace Blocks.Gameplay.Stealth.Editor
                     continue;
                 }
 
-                if (prefab.GetComponent<PlayerCrouch>() != null)
-                {
-                    continue;
-                }
-
                 GameObject root = PrefabUtility.LoadPrefabContents(path);
+                bool changed = false;
+
                 if (root.GetComponent<PlayerCrouch>() == null)
                 {
                     root.AddComponent<PlayerCrouch>();
+                    changed = true;
+                }
+
+                // CrouchIK goes on the Animator's own object, not the root: OnAnimatorIK is only
+                // called on the component that shares a GameObject with the Animator.
+                Animator animator = root.GetComponentInChildren<Animator>(true);
+                if (animator != null && animator.GetComponent<CrouchIK>() == null)
+                {
+                    animator.gameObject.AddComponent<CrouchIK>();
+                    changed = true;
+                }
+
+                if (changed)
+                {
                     PrefabUtility.SaveAsPrefabAsset(root, path);
                     modified++;
                     names.AppendLine("  " + System.IO.Path.GetFileNameWithoutExtension(path));
                 }
+
                 PrefabUtility.UnloadPrefabContents(root);
             }
 
             AssetDatabase.SaveAssets();
 
-            EditorUtility.DisplayDialog(
-                "Stealth Setup",
+            Report(
                 modified > 0
                     ? $"Added PlayerCrouch to {modified} player prefab(s):\n\n{names}\n" +
-                      "Hold Q in play mode to crouch."
+                      "Hold Q in play mode to crouch. Knees bend via CrouchIK, which needs the IK Pass checkbox on the animator layer."
                     : "No player prefabs needed changing.\n\nEither crouch is already added, or no " +
-                      "prefab in the project has a CoreMovement component.",
-                "OK");
+                      "prefab in the project has a CoreMovement component.");
         }
 
         /// <summary>

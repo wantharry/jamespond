@@ -1123,6 +1123,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 6646217158191255399, guid: 36325fbf6fce643af8adbb389f17bce6, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6382800541601252555}
+    - targetCorrespondingSourceObject: {fileID: 6646217158191255399, guid: 36325fbf6fce643af8adbb389f17bce6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2365143174243438794}
   m_SourcePrefab: {fileID: 100100000, guid: 36325fbf6fce643af8adbb389f17bce6, type: 3}
 --- !u!1 &3633669735580990225 stripped
 GameObject:
@@ -1175,6 +1178,21 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &2365143174243438794
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3633669735580990225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02be3073a7e7cdb4386ad7286a3d65d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Blocks.Gameplay.Stealth::Blocks.Gameplay.Stealth.CrouchIK
+  hipDrop: 0.45
+  forwardLean: 12
+  blendSpeed: 6
 --- !u!4 &4118176768871113131 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6302730393651566045, guid: 36325fbf6fce643af8adbb389f17bce6, type: 3}
