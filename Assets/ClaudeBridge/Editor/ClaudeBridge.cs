@@ -247,10 +247,18 @@ namespace ClaudeBridge
                     return "no NetworkManager in the running scene";
                 }
 
-                var isHost = managerType.GetProperty("IsHost");
-                if (isHost != null && (bool)isHost.GetValue(manager))
+                // Refuse if the manager is already up in any role. Calling StartHost on a running or
+                // half-shutdown NetworkManager corrupts its message-type registration, and the
+                // teardown that follows throws inside Netcode for every NetworkObject in the scene —
+                // hundreds of NullReferenceExceptions, and a transport socket that is never closed.
+                // The leaked socket then holds the port for the life of the editor process.
+                foreach (string role in new[] { "IsHost", "IsServer", "IsClient", "IsListening" })
                 {
-                    return "already hosting";
+                    var property = managerType.GetProperty(role);
+                    if (property != null && property.PropertyType == typeof(bool) && (bool)property.GetValue(manager))
+                    {
+                        return "already up (" + role + "); not calling StartHost again";
+                    }
                 }
 
                 var startHost = managerType.GetMethod("StartHost", Type.EmptyTypes);
