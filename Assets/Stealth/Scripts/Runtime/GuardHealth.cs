@@ -37,6 +37,9 @@ namespace Blocks.Gameplay.Stealth
         /// <summary>How far back along a bullet's path to place an unidentified shooter.</summary>
         private const float TracebackDistance = 10f;
 
+        /// <summary>How far a gunshot carries, in metres. The loudest thing in the game.</summary>
+        private const float GunshotRadius = 25f;
+
         private bool m_Died;
 
         private readonly NetworkVariable<float> m_Health = new NetworkVariable<float>(
@@ -136,7 +139,7 @@ namespace Blocks.Gameplay.Stealth
                     brain.ReportAttackedFrom(from);
                 }
 
-                GuardBrain.BroadcastShot(from, brain);
+                GuardBrain.BroadcastNoise(from, GunshotRadius, brain);
             }
         }
 

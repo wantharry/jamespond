@@ -4,7 +4,8 @@
     "references": [
         "Blocks.Gameplay.Core",
         "Unity.Netcode.Runtime",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Blocks.Gameplay.Shooter"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

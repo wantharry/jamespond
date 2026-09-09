@@ -226,42 +226,56 @@ namespace Blocks.Gameplay.Stealth
         /// <param name="origin">Muzzle position.</param>
         /// <param name="endPoint">Where the shot terminated.</param>
         /// <summary>
-        /// Lets every guard in earshot know a shot was fired from somewhere.
+        /// Lets every guard in earshot know a noise was made somewhere.
         /// </summary>
         /// <remarks>
-        /// Without this a player can stand in one spot and pick guards off one at a time, because
-        /// only the guard actually hit ever reacts.
+        /// Loudness is expressed as the radius the noise carries, in metres, rather than an abstract
+        /// 0..1: "a gunshot carries 25 m, footsteps 8, a crouched step 3" is something you can reason
+        /// about while tuning. A guard's own hearingRadius caps it, so a deaf guard stays deaf.
+        ///
+        /// Certainty falls off with distance. A noise at the very edge of earshot is a maybe; one
+        /// made next to the guard is unmistakable and pushes past the suspicion threshold on its own,
+        /// which is what makes standing close to a guard dangerous even without being seen.
         ///
         /// Distance only, deliberately: hearing is not line of sight, and requiring one would mean a
         /// guard on the far side of a doorway ignores a rifle going off next to it.
         /// </remarks>
-        /// <param name="worldPosition">Where the shot came from.</param>
-        /// <param name="firedAt">The guard that was hit, which reacts through
-        /// <see cref="ReportAttackedFrom"/> instead and should not also be told it heard something.</param>
-        public static void BroadcastShot(Vector3 worldPosition, GuardBrain firedAt)
+        /// <param name="worldPosition">Where the noise was made.</param>
+        /// <param name="radius">How far it carries, in metres.</param>
+        /// <param name="ignore">A guard that is reacting some other way and should not be told twice.</param>
+        public static void BroadcastNoise(Vector3 worldPosition, float radius, GuardBrain ignore = null)
         {
             foreach (GuardBrain brain in s_Spawned)
             {
-                if (brain == null || brain == firedAt || !brain.IsServer)
+                if (brain == null || brain == ignore || !brain.IsServer)
                 {
                     continue;
                 }
 
-                if (Vector3.Distance(brain.transform.position, worldPosition) <= brain.hearingRadius)
+                float reach = Mathf.Min(radius, brain.hearingRadius);
+                if (reach <= 0f)
                 {
-                    brain.ReportHeardShot(worldPosition);
+                    continue;
+                }
+
+                float distance = Vector3.Distance(brain.transform.position, worldPosition);
+                if (distance <= reach)
+                {
+                    brain.ReportHeardNoise(worldPosition, 1f - distance / reach);
                 }
             }
         }
 
         /// <summary>
-        /// Tells the guard it heard a shot from somewhere, so it looks that way.
+        /// Tells the guard it heard something, so it looks that way.
         /// </summary>
         /// <remarks>
-        /// Separate from <see cref="ReportAttackedFrom"/> and weaker on purpose: a guard that was hit
-        /// knows exactly what happened, one that merely heard it is only curious.
+        /// Weaker than <see cref="ReportAttackedFrom"/> on purpose: a guard that was hit knows
+        /// exactly what happened, one that merely heard something is only curious.
         /// </remarks>
-        public void ReportHeardShot(Vector3 worldPosition)
+        /// <param name="worldPosition">Where the noise came from.</param>
+        /// <param name="closeness">0 at the edge of earshot, 1 at the source.</param>
+        public void ReportHeardNoise(Vector3 worldPosition, float closeness)
         {
             if (!IsServer)
             {
@@ -270,7 +284,7 @@ namespace Blocks.Gameplay.Stealth
 
             m_LastKnownPosition = worldPosition;
             m_HasLastKnownPosition = true;
-            m_Awareness.Value = Mathf.Max(m_Awareness.Value, awarenessWhenHeard);
+            m_Awareness.Value = Mathf.Max(m_Awareness.Value, awarenessWhenHeard * Mathf.Clamp01(closeness));
         }
 
         /// <summary>

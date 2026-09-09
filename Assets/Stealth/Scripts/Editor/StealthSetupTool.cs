@@ -253,6 +253,12 @@ namespace Blocks.Gameplay.Stealth.Editor
 
                 // CrouchIK goes on the Animator's own object, not the root: OnAnimatorIK is only
                 // called on the component that shares a GameObject with the Animator.
+                if (root.GetComponent<PlayerNoise>() == null)
+                {
+                    root.AddComponent<PlayerNoise>();
+                    changed = true;
+                }
+
                 Animator animator = root.GetComponentInChildren<Animator>(true);
                 if (animator != null && animator.GetComponent<CrouchIK>() == null)
                 {

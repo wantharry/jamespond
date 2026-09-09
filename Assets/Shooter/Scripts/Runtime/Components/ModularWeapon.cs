@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Unity.Netcode;
 using Unity.Cinemachine;
@@ -196,6 +197,16 @@ namespace Blocks.Gameplay.Shooter
         /// <param name="ownerCharacter">The character firing the weapon.</param>
         /// <param name="fireOrigin">The origin point of the fire ray.</param>
         /// <param name="fireDirection">The direction to fire in.</param>
+        /// <summary>
+        /// Raised on every peer whenever any weapon fires, with the character that fired and where.
+        /// </summary>
+        /// <remarks>
+        /// Static because weapons are spawned and swapped at runtime through the attachment system,
+        /// so there is no stable instance for a listener to subscribe to. Only player weapons are
+        /// ModularWeapons; guards fire through GuardWeapon and do not raise this.
+        /// </remarks>
+        public static event Action<GameObject, Vector3> AnyWeaponFired;
+
         public void Fire(GameObject ownerCharacter, Vector3 fireOrigin, Vector3 fireDirection)
         {
             if (!IsOwner) return;
@@ -361,6 +372,7 @@ namespace Blocks.Gameplay.Shooter
             m_ShootingContext.OnHitPointCalculated = null;
 
             m_ShootingBehavior.Shoot(m_ShootingContext);
+            AnyWeaponFired?.Invoke(m_ShootingContext.owner, muzzle.position);
             m_SpreadHandler.IncreaseSpread();
             PlayMuzzleFlashRpc(muzzle.position, muzzle.forward);
             CoreDirector.RequestCameraShake()

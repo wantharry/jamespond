@@ -274,6 +274,7 @@ GameObject:
   - component: {fileID: 6606124303744922498}
   - component: {fileID: 492551780235547040}
   - component: {fileID: 2239106860997990207}
+  - component: {fileID: 7876526508147355671}
   m_Layer: 3
   m_Name: '[BB] ShooterPlayer'
   m_TagString: Player
@@ -850,6 +851,26 @@ MonoBehaviour:
   headroomMask:
     serializedVersion: 2
     m_Bits: 1
+--- !u!114 &7876526508147355671
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4416926081852918481}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a4c9fe7b2cd73d4fa1e7236ed777e47, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Blocks.Gameplay.Stealth::Blocks.Gameplay.Stealth.PlayerNoise
+  ShowTopMostFoldoutHeaderGroup: 1
+  crouchRadius: 3
+  walkRadius: 9
+  sprintRadius: 25
+  landingRadius: 14
+  gunshotRadius: 25
+  stepInterval: 0.45
+  stillSpeedThreshold: 0.2
 --- !u!1 &6964032051100779426
 GameObject:
   m_ObjectHideFlags: 0
