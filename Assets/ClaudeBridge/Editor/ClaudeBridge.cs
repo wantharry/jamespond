@@ -212,6 +212,122 @@ namespace ClaudeBridge
                 return $"guards: {guards}, with a body: {armed}, with a collider: {killable}, with a muzzle: {aiming}";
             }
 
+            if (command.Equals("play", StringComparison.OrdinalIgnoreCase))
+            {
+                if (EditorApplication.isPlaying)
+                {
+                    return "already playing";
+                }
+
+                EditorApplication.isPlaying = true;
+                return "entering play mode";
+            }
+
+            if (command.Equals("host", StringComparison.OrdinalIgnoreCase))
+            {
+                // Reflection again: the bridge references no game or package assembly on purpose, so
+                // it survives their compile errors. Netcode is reached by qualified type name.
+                if (!EditorApplication.isPlaying)
+                {
+                    status = "ERROR";
+                    return "not in play mode";
+                }
+
+                Type managerType = Type.GetType("Unity.Netcode.NetworkManager, Unity.Netcode.Runtime");
+                if (managerType == null)
+                {
+                    status = "ERROR";
+                    return "could not resolve Unity.Netcode.NetworkManager";
+                }
+
+                UnityEngine.Object manager = UnityEngine.Object.FindFirstObjectByType(managerType);
+                if (manager == null)
+                {
+                    status = "ERROR";
+                    return "no NetworkManager in the running scene";
+                }
+
+                var isHost = managerType.GetProperty("IsHost");
+                if (isHost != null && (bool)isHost.GetValue(manager))
+                {
+                    return "already hosting";
+                }
+
+                var startHost = managerType.GetMethod("StartHost", Type.EmptyTypes);
+                if (startHost == null)
+                {
+                    status = "ERROR";
+                    return "NetworkManager has no StartHost()";
+                }
+
+                object started = startHost.Invoke(manager, null);
+                return "StartHost returned " + (started?.ToString() ?? "void");
+            }
+
+            if (command.StartsWith("crouch", StringComparison.OrdinalIgnoreCase))
+            {
+                string argument = command.Substring("crouch".Length).Trim().ToLowerInvariant();
+                // Reflection, because the bridge deliberately references no game assembly: it has to
+                // keep answering when the code being edited fails to compile.
+                var found = new List<string>();
+                foreach (MonoBehaviour behaviour in UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+                {
+                    if (behaviour == null || behaviour.GetType().Name != "PlayerCrouch")
+                    {
+                        continue;
+                    }
+
+                    Type type = behaviour.GetType();
+                    string key = ReadPrivate(behaviour, type, "crouchKey");
+                    string toggle = ReadPrivate(behaviour, type, "toggleMode");
+                    var controller = behaviour.GetComponent<CharacterController>();
+
+                    // Forcing the crouch separates the two things that look identical from outside:
+                    // input never arriving, and the pose logic refusing to apply.
+                    // Hold mode stands the player straight back up on the next frame, because the
+                    // input loop sees the key is not held. Flipping to toggle mode lets a forced
+                    // crouch persist long enough to see whether the pose logic actually runs.
+                    if (argument == "toggle")
+                    {
+                        var toggleField = type.GetField("toggleMode",
+                            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                        bool now = !(bool)toggleField.GetValue(behaviour);
+                        toggleField.SetValue(behaviour, now);
+                        toggle = now.ToString();
+                    }
+
+                    string forced = "";
+                    if (argument == "on" || argument == "off")
+                    {
+                        var setter = type.GetMethod("SetCrouched");
+                        forced = setter == null
+                            ? ", SetCrouched=<missing>"
+                            : ", SetCrouched(" + argument + ")=" + setter.Invoke(behaviour, new object[] { argument == "on" });
+                    }
+
+                    string crouching = ReadMember(behaviour, type, "IsCrouching");
+                    string captured = ReadPrivate(behaviour, type, "m_CapturedStandingPose");
+                    string standing = ReadPrivate(behaviour, type, "m_StandingHeight");
+
+                    found.Add($"{behaviour.gameObject.name}: isCrouching={crouching}, " +
+                              $"capturedStandingPose={captured}, standingHeight={standing}, " +
+                              $"enabled={behaviour.enabled}, " +
+                              $"crouchKey={key}, toggleMode={toggle}, " +
+                              $"controllerHeight={(controller == null ? "<none>" : controller.height.ToString("F2"))}" +
+                              forced);
+                }
+
+                if (found.Count == 0)
+                {
+                    status = "ERROR";
+                    return EditorApplication.isPlaying
+                        ? "no PlayerCrouch in the running scene: the spawned player prefab does not carry it"
+                        : "no PlayerCrouch found; enter play mode and start a host first";
+                }
+
+                return string.Join(Environment.NewLine, found);
+            }
+
             if (command.Equals("save", StringComparison.OrdinalIgnoreCase))
             {
                 if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -238,7 +354,27 @@ namespace ClaudeBridge
             }
 
             status = "ERROR";
-            return "unknown command. Supported: ping | info | stop | save | serialization [text] | menu <Menu/Path>";
+            return "unknown command. Supported: ping | info | play | host | stop | crouch | save | serialization [text] | menu <Menu/Path>";
+        }
+
+        /// <summary>
+        /// Reads a private serialized field by name, for inspecting types the bridge cannot reference.
+        /// </summary>
+        /// <summary>Reads a public property by name.</summary>
+        private static string ReadMember(object instance, Type type, string name)
+        {
+            System.Reflection.PropertyInfo info = type.GetProperty(name);
+            return info == null ? "<no such property>" : info.GetValue(instance)?.ToString() ?? "<null>";
+        }
+
+        private static string ReadPrivate(object instance, Type type, string field)
+        {
+            System.Reflection.FieldInfo info = type.GetField(field,
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+
+            return info == null ? "<no such field>" : info.GetValue(instance)?.ToString() ?? "<null>";
         }
 
         /// <summary>
